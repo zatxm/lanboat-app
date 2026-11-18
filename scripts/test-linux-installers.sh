@@ -74,8 +74,13 @@ case "$target" in
     zypper --non-interactive install --allow-unsigned-rpm --no-recommends "/dist/lanboat-$version-1.$machine.rpm"
     ;;
   arch)
-    pacman -Syu --noconfirm
-    pacman -U --noconfirm "/dist/lanboat-$version-1-$machine.pkg.tar.zst"
+    pacman_options=(--noconfirm)
+    # The ARM runner's Docker sandbox rejects the nested Landlock filesystem sandbox.
+    if [[ $arch == arm64 ]]; then
+      pacman_options+=(--disable-sandbox-filesystem)
+    fi
+    pacman -Syu "${pacman_options[@]}"
+    pacman -U "${pacman_options[@]}" "/dist/lanboat-$version-1-$machine.pkg.tar.zst"
     ;;
 esac
 test "$(lanboat --version)" = "$version"
