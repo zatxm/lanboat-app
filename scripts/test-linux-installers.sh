@@ -11,6 +11,7 @@ case "$arch" in
 esac
 test "$(uname -m)" = "$machine"
 
+failed=()
 for target in ubuntu fedora opensuse arch; do
   case "$target" in
     ubuntu) image=ubuntu:24.04 ;;
@@ -19,7 +20,7 @@ for target in ubuntu fedora opensuse arch; do
     arch) image=$arch_image ;;
   esac
   echo "Testing $target/$arch installers"
-  docker run --rm -i --platform "linux/$arch" --mount "type=bind,source=$PWD/dist,target=/dist,readonly" \
+  if docker run --rm -i --platform "linux/$arch" --mount "type=bind,source=$PWD/dist,target=/dist,readonly" \
     "$image" bash -euo pipefail -s -- "$target" "$arch" "$machine" "$version" <<'CONTAINER'
 target=$1 arch=$2 machine=$3 version=$4
 test "$(uname -m)" = "$machine"
@@ -79,8 +80,8 @@ case "$target" in
 esac
 test "$(lanboat --version)" = "$version"
 test -f /usr/share/applications/lanboat.desktop
-for command in ip pkexec zenity xdg-open; do
-  command -v "$command"
+for dependency in ip pkexec zenity xdg-open; do
+  command -v "$dependency" || { echo "$target/$arch: missing installed command $dependency" >&2; exit 1; }
 done
 case "$target" in
   arch) pacman -R --noconfirm lanboat ;;
@@ -88,4 +89,13 @@ case "$target" in
 esac
 test ! -e /usr/bin/lanboat
 CONTAINER
+  then
+    echo "$target/$arch installer tests passed"
+  else
+    failed+=("$target/$arch")
+  fi
 done
+if (( ${#failed[@]} > 0 )); then
+  printf 'Installer tests failed: %s\n' "${failed[*]}" >&2
+  exit 1
+fi

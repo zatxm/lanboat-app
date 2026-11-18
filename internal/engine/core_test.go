@@ -118,44 +118,56 @@ func TestEmbeddedProxyRequestLogging(t *testing.T) {
 	transport := &http.Transport{Proxy: http.ProxyURL(proxy)}
 	defer transport.CloseIdleConnections()
 	client := &http.Client{Transport: transport, Timeout: 3 * time.Second}
-	for _, full := range []bool{false, true, false} {
+	for i, full := range []bool{false, true, false} {
 		e.SetRequestLogging(true, full)
-		req, _ := http.NewRequest("POST", origin.URL+"/search?q=core", strings.NewReader(strings.Repeat("x", 100000)))
+		target := fmt.Sprintf("%s/search?q=core&request=%d", origin.URL, i)
+		req, err := http.NewRequest(http.MethodPost, target, strings.NewReader(strings.Repeat("x", 100000)))
+		if err != nil {
+			t.Fatal(err)
+		}
 		req.Header.Set("X-Analysis", "present")
 		resp, err := client.Do(req)
 		if err != nil {
 			t.Fatal(err)
 		}
-		io.Copy(io.Discard, resp.Body)
+		_, err = io.Copy(io.Discard, resp.Body)
 		resp.Body.Close()
-		page, err := store.Page("proxy", 0)
 		if err != nil {
 			t.Fatal(err)
 		}
-		found := false
-		for _, entry := range page.Entries {
-			if entry.Method != "POST" {
-				continue
+
+		entry := waitProxyRequestLog(t, store, http.MethodPost, target)
+		if full {
+			if http.Header(entry.Headers).Get("X-Analysis") != "present" || len(entry.Body) != allinone.RequestBodyLogLimit || !entry.BodyTruncated {
+				t.Fatalf("request %d: incomplete full log (headers=%d body=%d truncated=%t)", i, len(entry.Headers), len(entry.Body), entry.BodyTruncated)
 			}
-			found = true
-			if entry.URL != origin.URL+"/search?q=core" {
-				t.Fatal(entry.URL)
-			}
-			if full {
-				if entry.Headers["X-Analysis"][0] != "present" || len(entry.Body) != allinone.RequestBodyLogLimit || !entry.BodyTruncated {
-					t.Fatalf("full log incomplete: %+v", entry)
-				}
-			} else if len(entry.Headers) > 0 || len(entry.Body) > 0 {
-				t.Fatal("request details recorded while disabled")
-			}
-			break
-		}
-		if !found {
-			t.Fatal("request log missing")
+		} else if len(entry.Headers) != 0 || len(entry.Body) != 0 || entry.BodyTruncated {
+			t.Fatalf("request %d: details recorded while disabled (headers=%d body=%d truncated=%t)", i, len(entry.Headers), len(entry.Body), entry.BodyTruncated)
 		}
 	}
 	if !e.State().Connected {
 		t.Fatal("log toggle restarted the core")
+	}
+}
+
+func waitProxyRequestLog(t *testing.T, store *traffic.Store, method, target string) traffic.Entry {
+	t.Helper()
+	// Runtime callbacks and disk writes may finish after the client reads the response.
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		page, err := store.Page("proxy", 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, entry := range page.Entries {
+			if entry.Method == method && entry.URL == target {
+				return entry
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("missing proxy request log for %s %s", method, target)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 
@@ -369,15 +381,12 @@ func TestHTTPSLogDoesNotInventDecryptedRequests(t *testing.T) {
 	}
 	io.Copy(io.Discard, resp.Body)
 	resp.Body.Close()
+	waitProxyRequestLog(t, store, http.MethodConnect, strings.TrimPrefix(origin.URL, "https://"))
 	page, err := store.Page("proxy", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	found := false
 	for _, entry := range page.Entries {
-		if entry.Method == "CONNECT" {
-			found = true
-		}
 		raw, _ := json.Marshal(entry)
 		for _, secret := range []string{"proxy-secret", "private-origin-token", "private-body", "token=encrypted"} {
 			if strings.Contains(string(raw), secret) {
@@ -387,9 +396,6 @@ func TestHTTPSLogDoesNotInventDecryptedRequests(t *testing.T) {
 		if entry.Method == "POST" {
 			t.Fatal("encrypted method was invented")
 		}
-	}
-	if !found {
-		t.Fatal("CONNECT authority not recorded")
 	}
 }
 

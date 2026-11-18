@@ -20,10 +20,11 @@ env:
   RELEASE_TAG: ${{ inputs.tag || github.event.release.tag_name }}
 jobs:
   build:
+    name: Build ${{ matrix.platform }}/${{ matrix.arch }}
     strategy:
       fail-fast: false
       matrix:
-        os: [linux, windows, darwin]
+        platform: [Linux, Windows, macOS]
         arch: [amd64, arm64]
     runs-on: ubuntu-24.04
     steps:
@@ -38,10 +39,10 @@ jobs:
           [[ "$RELEASE_TAG" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]]
           echo "LANBOAT_VERSION=${BASH_REMATCH[1]}" >> "$GITHUB_ENV"
       - name: Test application
-        if: matrix.os == 'linux' && matrix.arch == 'amd64'
+        if: matrix.platform == 'Linux' && matrix.arch == 'amd64'
         run: go test -mod=readonly ./...
       - name: Install UPX
-        if: matrix.os != 'darwin'
+        if: matrix.platform != 'macOS'
         run: |
           curl -fsSL --retry 3 https://github.com/upx/upx/releases/download/v5.3.0/upx-5.3.0-amd64_linux.tar.xz -o "$RUNNER_TEMP/upx.tar.xz"
           echo '79cea8a50b6fa102d10c7b79a419cd77dead3cc2d78661de2dc5e5815dc505c1  '"$RUNNER_TEMP/upx.tar.xz" | sha256sum -c -
@@ -49,29 +50,34 @@ jobs:
           echo "$RUNNER_TEMP/upx-5.3.0-amd64_linux" >> "$GITHUB_PATH"
       - name: Build application
         env:
-          TARGET: ${{ matrix.os }}
+          PLATFORM: ${{ matrix.platform }}
           ARCH: ${{ matrix.arch }}
         run: |
           bash scripts/notices.sh
-          if [[ $TARGET == windows ]]; then suffix=.exe; else suffix=; fi
-          bash scripts/build-release.sh "$TARGET" "$ARCH" "build/bin/Lanboat$suffix"
+          case "$PLATFORM" in
+            Linux) target=linux; suffix= ;;
+            Windows) target=windows; suffix=.exe ;;
+            macOS) target=darwin; suffix= ;;
+          esac
+          bash scripts/build-release.sh "$target" "$ARCH" "build/bin/Lanboat$suffix"
       - uses: actions/upload-artifact@v4
         with:
-          name: binary-${{ matrix.os }}-${{ matrix.arch }}
+          name: binary-${{ matrix.platform }}-${{ matrix.arch }}
           path: build/
           if-no-files-found: error
   package:
+    name: Package and test ${{ matrix.platform }}/${{ matrix.arch }}
     needs: build
     strategy:
       fail-fast: false
       matrix:
         include:
-          - {os: linux, arch: amd64, runner: ubuntu-24.04}
-          - {os: linux, arch: arm64, runner: ubuntu-24.04-arm}
-          - {os: windows, arch: amd64, runner: windows-2025}
-          - {os: windows, arch: arm64, runner: windows-11-arm}
-          - {os: darwin, arch: amd64, runner: macos-15-intel}
-          - {os: darwin, arch: arm64, runner: macos-15}
+          - {platform: Linux, arch: amd64, runner: ubuntu-24.04}
+          - {platform: Linux, arch: arm64, runner: ubuntu-24.04-arm}
+          - {platform: Windows, arch: amd64, runner: windows-2025}
+          - {platform: Windows, arch: arm64, runner: windows-11-arm}
+          - {platform: macOS, arch: amd64, runner: macos-15-intel}
+          - {platform: macOS, arch: arm64, runner: macos-15}
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
@@ -79,14 +85,14 @@ jobs:
           persist-credentials: false
       - uses: actions/download-artifact@v4
         with:
-          name: binary-${{ matrix.os }}-${{ matrix.arch }}
+          name: binary-${{ matrix.platform }}-${{ matrix.arch }}
           path: build/
       - shell: bash
         run: |
           echo "LANBOAT_VERSION=${RELEASE_TAG#v}" >> "$GITHUB_ENV"
           mkdir -p dist
       - name: Package Linux
-        if: matrix.os == 'linux'
+        if: matrix.platform == 'Linux'
         env:
           ARCH: ${{ matrix.arch }}
         run: |
@@ -108,12 +114,12 @@ jobs:
           tar -xzf "$nfpm_archive" -C "$RUNNER_TEMP" nfpm
           "$RUNNER_TEMP/nfpm" package --config packaging/archlinux.yaml --packager archlinux --target dist/
       - name: Test Linux installers
-        if: matrix.os == 'linux'
+        if: matrix.platform == 'Linux'
         env:
           ARCH: ${{ matrix.arch }}
         run: bash scripts/test-linux-installers.sh "$ARCH" "$LANBOAT_VERSION"
       - name: Package Windows
-        if: matrix.os == 'windows'
+        if: matrix.platform == 'Windows'
         shell: pwsh
         env:
           CPU: ${{ matrix.arch }}
@@ -150,7 +156,7 @@ jobs:
             if (!(Test-Path "$data/app.lock") -or $app.HasExited) { throw 'Installed application startup failed' }
           } finally { if (!$app.HasExited) { Stop-Process -Id $app.Id -Force } }
       - name: Package macOS
-        if: matrix.os == 'darwin'
+        if: matrix.platform == 'macOS'
         env:
           ARCH: ${{ matrix.arch }}
         run: |
@@ -158,7 +164,7 @@ jobs:
           test "$(build/bin/Lanboat --version)" = "$LANBOAT_VERSION"
           bash packaging/macos/package.sh "$ARCH"
       - name: Test macOS installer
-        if: matrix.os == 'darwin'
+        if: matrix.platform == 'macOS'
         env:
           ARCH: ${{ matrix.arch }}
         run: |
@@ -171,7 +177,7 @@ jobs:
           test "$("$app/Contents/MacOS/Lanboat" --version)" = "$LANBOAT_VERSION"
       - uses: actions/upload-artifact@v4
         with:
-          name: installers-${{ matrix.os }}-${{ matrix.arch }}
+          name: installers-${{ matrix.platform }}-${{ matrix.arch }}
           path: |
             dist/*.deb
             dist/*.rpm

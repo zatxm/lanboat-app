@@ -4,6 +4,7 @@ Release: 1
 Summary: Lanboat desktop proxy client
 License: GPL-3.0-or-later
 Requires: (libX11 or libX11-6), zenity, xdg-utils, (iproute or iproute2), polkit, util-linux
+Requires: /usr/bin/pkexec
 %global debug_package %{nil}
 %global __os_install_post %{nil}
 %description
