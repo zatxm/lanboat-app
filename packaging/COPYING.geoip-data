@@ -1,0 +1,7 @@
+This product includes GeoLite2 data created by MaxMind, available from https://www.maxmind.com/ .
+Country prefix snapshot obtained from https://github.com/SagerNet/sing-geoip/tree/rule-set .
+SagerNet's generator references https://github.com/Dreamacro/maxmind-geoip .
+Data was transformed from geoip-cn.srs into JSON CIDR prefixes for offline routing.
+Upstream data terms: https://www.maxmind.com/en/geolite2/eula .
+RIPEstat/RIS AS132203 prefix data: https://stat.ripe.net/data/announced-prefixes/data.json?resource=AS132203 .
+Query interval and hashes are listed in internal/routing/assets/sources.json.

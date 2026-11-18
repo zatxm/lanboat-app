@@ -1,0 +1,14 @@
+#!/bin/sh
+set -eu
+case "$1" in
+  remove) ;;
+  *) exit 0 ;;
+esac
+state=/var/lib/lanboat/install-user
+[ -f "$state" ] || exit 0
+desktop_user=$(cat "$state")
+[ -n "$desktop_user" ] && [ "$desktop_user" != root ] || exit 1
+account=$(getent passwd "$desktop_user") || exit 0
+desktop_home=$(printf '%s\n' "$account" | cut -d: -f6)
+runuser -u "$desktop_user" -- env LANBOAT_INSTALL_PREFIX="$desktop_home/.local" \
+  bash /usr/share/lanboat/uninstall.sh

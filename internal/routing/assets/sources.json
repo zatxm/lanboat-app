@@ -1,0 +1,19 @@
+{
+  "snapshot_date": "2026-10-21",
+  "geoip_cn": {
+    "source": "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-cn.srs",
+    "prefix_count": 8113,
+    "transform": "sing-box rule-set decompile geoip-cn.srs -o geoip-cn.json",
+    "file": "internal/routing/assets/geoip-cn.json",
+    "sha256": "a3dac158ca24852ada3082a1cf2c893beb3a50e8a1d1c9212669fec5b66c5567"
+  },
+  "as132203": {
+    "source": "https://stat.ripe.net/data/announced-prefixes/data.json?resource=AS132203",
+    "prefix_count": 1164,
+    "file": "internal/routing/assets/as132203.json",
+    "query_starttime": "2026-10-07T00:00:00",
+    "query_endtime": "2026-10-21T00:00:00",
+    "note": "RIPEstat RIS announced prefixes seen by at least 10 full-feed peers within the query window. This is not a universal ASN database.",
+    "sha256": "ccf9b163325210afcb37754e38efcbf8b53e497fb87e88a50394984510de4933"
+  }
+}

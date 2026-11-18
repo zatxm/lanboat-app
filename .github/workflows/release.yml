@@ -1,0 +1,226 @@
+name: Release desktop installers
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'New release tag (vX.Y.Z)'
+        type: string
+        required: true
+      verify_only:
+        description: 'Build and test installers without publishing'
+        type: boolean
+        default: false
+  release:
+    types: [published]
+permissions:
+  contents: read
+env:
+  GOWORK: 'off'
+  CGO_ENABLED: '0'
+  RELEASE_TAG: ${{ inputs.tag || github.event.release.tag_name }}
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [linux, windows, darwin]
+        arch: [amd64, arm64]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Validate release version
+        run: |
+          [[ "$RELEASE_TAG" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]]
+          echo "LANBOAT_VERSION=${BASH_REMATCH[1]}" >> "$GITHUB_ENV"
+      - name: Test application
+        if: matrix.os == 'linux' && matrix.arch == 'amd64'
+        run: go test -mod=readonly ./...
+      - name: Install UPX
+        if: matrix.os != 'darwin'
+        run: |
+          curl -fsSL --retry 3 https://github.com/upx/upx/releases/download/v5.3.0/upx-5.3.0-amd64_linux.tar.xz -o "$RUNNER_TEMP/upx.tar.xz"
+          echo '79cea8a50b6fa102d10c7b79a419cd77dead3cc2d78661de2dc5e5815dc505c1  '"$RUNNER_TEMP/upx.tar.xz" | sha256sum -c -
+          tar -xf "$RUNNER_TEMP/upx.tar.xz" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/upx-5.3.0-amd64_linux" >> "$GITHUB_PATH"
+      - name: Build application
+        env:
+          TARGET: ${{ matrix.os }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          bash scripts/notices.sh
+          if [[ $TARGET == windows ]]; then suffix=.exe; else suffix=; fi
+          bash scripts/build-release.sh "$TARGET" "$ARCH" "build/bin/Lanboat$suffix"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.os }}-${{ matrix.arch }}
+          path: build/
+          if-no-files-found: error
+  package:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: linux, arch: amd64, runner: ubuntu-24.04}
+          - {os: linux, arch: arm64, runner: ubuntu-24.04-arm}
+          - {os: windows, arch: amd64, runner: windows-2025}
+          - {os: windows, arch: arm64, runner: windows-11-arm}
+          - {os: darwin, arch: amd64, runner: macos-15-intel}
+          - {os: darwin, arch: arm64, runner: macos-15}
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: binary-${{ matrix.os }}-${{ matrix.arch }}
+          path: build/
+      - shell: bash
+        run: |
+          echo "LANBOAT_VERSION=${RELEASE_TAG#v}" >> "$GITHUB_ENV"
+          mkdir -p dist
+      - name: Package Linux
+        if: matrix.os == 'linux'
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y rpm
+          chmod +x build/bin/Lanboat
+          test "$(build/bin/Lanboat --version)" = "$LANBOAT_VERSION"
+          mv build/bin/Lanboat build/bin/lanboat
+          LANBOAT_PACKAGE_PREBUILT=1 bash scripts/package-linux.sh
+          rpmbuild -bb --define "_topdir $RUNNER_TEMP/rpm" --define "app_root $PWD" --define "app_version $LANBOAT_VERSION" packaging/lanboat.spec
+          cp "$RUNNER_TEMP"/rpm/RPMS/*/*.rpm dist/
+          case "$ARCH" in
+            amd64) nfpm_arch=x86_64; sha=2afaa5ffb5e3493402e31e7c67a5a1fb42133e3f66fc315ca0051934125561c7 ;;
+            arm64) nfpm_arch=arm64; sha=d4eee71839e92c68cbd3b101640bad32d2856fc551acae0635be9118e48c9d9c ;;
+          esac
+          nfpm_archive="$RUNNER_TEMP/nfpm.tar.gz"
+          curl -fsSL --retry 3 "https://github.com/goreleaser/nfpm/releases/download/v2.49.0/nfpm_2.49.0_Linux_$nfpm_arch.tar.gz" -o "$nfpm_archive"
+          echo "$sha  $nfpm_archive" | sha256sum -c -
+          tar -xzf "$nfpm_archive" -C "$RUNNER_TEMP" nfpm
+          "$RUNNER_TEMP/nfpm" package --config packaging/archlinux.yaml --packager archlinux --target dist/
+      - name: Test Linux installers
+        if: matrix.os == 'linux'
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: bash scripts/test-linux-installers.sh "$ARCH" "$LANBOAT_VERSION"
+      - name: Package Windows
+        if: matrix.os == 'windows'
+        shell: pwsh
+        env:
+          CPU: ${{ matrix.arch }}
+        run: |
+          $machine = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
+          $expectedMachine = if ($env:CPU -eq 'arm64') { 'Arm64' } else { 'X64' }
+          if ($machine -ne $expectedMachine) { throw "Unexpected runner architecture: $machine" }
+          $arch = if ($env:CPU -eq 'amd64') { 'x64compatible' } else { 'arm64' }
+          $compilerSetup = Join-Path $env:RUNNER_TEMP 'inno-7.1.1.exe'
+          Invoke-WebRequest 'https://github.com/jrsoftware/issrc/releases/download/is-7_1_1/innosetup-7.1.1-x86.exe' -OutFile $compilerSetup
+          if ((Get-FileHash $compilerSetup).Hash -ne '03446e46f5da932e408881168c01afc59cc667cb5bc927d839c5526ace5cc0d3') { throw 'Inno Setup checksum mismatch' }
+          $compiler = Join-Path $env:RUNNER_TEMP 'inno'
+          $p = Start-Process $compilerSetup -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CURRENTUSER /DIR=`"$compiler`"" -PassThru -Wait
+          if ($p.ExitCode) { throw "Inno Setup installation failed ($($p.ExitCode))" }
+          $iscc = Join-Path $compiler 'ISCC.exe'
+          & $iscc "/DVersion=$env:LANBOAT_VERSION" "/DArchitecture=$arch" "/DCPU=$env:CPU" packaging/windows/lanboat.iss
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $setup = (Get-ChildItem dist/*-setup.exe).FullName
+          $install = Join-Path $env:RUNNER_TEMP 'Lanboat test install'
+          $data = Join-Path $env:RUNNER_TEMP 'Lanboat test data'
+          $p = Start-Process $setup -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DIR=`"$install`" /DATADIR=`"$data`"" -PassThru -Wait
+          if ($p.ExitCode -ne 0) { throw "Installer failed ($($p.ExitCode))" }
+          $saved = Get-ItemPropertyValue -Path HKCU:\Software\Lanboat -Name DataDir
+          if ($saved -ne $data) { throw "Installer did not save chosen data path" }
+          $binary = Join-Path $install 'Lanboat.exe'
+          $versionFile = Join-Path $env:RUNNER_TEMP 'lanboat-version.txt'
+          $probe = Start-Process $binary -ArgumentList '--version' -RedirectStandardOutput $versionFile -PassThru -Wait
+          if ($probe.ExitCode -ne 0 -or (Get-Content $versionFile -Raw).Trim() -ne $env:LANBOAT_VERSION) {
+            throw 'Installed version check failed'
+          }
+          $app = Start-Process $binary -PassThru
+          try {
+            for ($i=0; $i -lt 40 -and !(Test-Path "$data/app.lock") -and !$app.HasExited; $i++) { Start-Sleep -Milliseconds 250 }
+            if (!(Test-Path "$data/app.lock") -or $app.HasExited) { throw 'Installed application startup failed' }
+          } finally { if (!$app.HasExited) { Stop-Process -Id $app.Id -Force } }
+      - name: Package macOS
+        if: matrix.os == 'darwin'
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          chmod +x build/bin/Lanboat
+          test "$(build/bin/Lanboat --version)" = "$LANBOAT_VERSION"
+          bash packaging/macos/package.sh "$ARCH"
+      - name: Test macOS installer
+        if: matrix.os == 'darwin'
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          if [[ $ARCH == amd64 ]]; then machine=x86_64; else machine=arm64; fi
+          test "$(uname -m)" = "$machine"
+          sudo installer -pkg "dist/Lanboat-$LANBOAT_VERSION-macos-$ARCH.pkg" -target /
+          app=/Applications/Lanboat.app
+          codesign --verify --strict "$app"
+          test "$(lipo -archs "$app/Contents/MacOS/Lanboat")" = "$machine"
+          test "$("$app/Contents/MacOS/Lanboat" --version)" = "$LANBOAT_VERSION"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installers-${{ matrix.os }}-${{ matrix.arch }}
+          path: |
+            dist/*.deb
+            dist/*.rpm
+            dist/*.pkg.tar.zst
+            dist/lanboat-*-linux-*.tar.gz
+            dist/*-setup.exe
+            dist/*.pkg
+          if-no-files-found: error
+  publish:
+    needs: package
+    if: ${{ !inputs.verify_only }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: installers-*
+          merge-multiple: true
+          path: dist
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd dist
+          version=${RELEASE_TAG#v}
+          assets=()
+          for arch in amd64 arm64; do
+            if [[ $arch == amd64 ]]; then machine=x86_64; else machine=aarch64; fi
+            assets+=(
+              "lanboat_${version}_$arch.deb"
+              "lanboat-$version-1.$machine.rpm"
+              "lanboat-$version-1-$machine.pkg.tar.zst"
+              "lanboat-$version-linux-$arch.tar.gz"
+              "Lanboat-$version-windows-$arch-setup.exe"
+              "Lanboat-$version-macos-$arch.pkg"
+            )
+          done
+          for asset in "${assets[@]}"; do
+            test -s "$asset"
+          done
+          sha256sum "${assets[@]}" > SHA256SUMS
+          assets+=(SHA256SUMS)
+          if [[ $GITHUB_EVENT_NAME == workflow_dispatch ]]; then
+            # An existing tag can point to a different commit than the selected branch.
+            if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" --silent 2>/dev/null; then
+              echo "Tag already exists. Publish a Release for that tag or choose a new version." >&2
+              exit 1
+            fi
+            gh release create "$RELEASE_TAG" "${assets[@]}" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "$RELEASE_TAG" --generate-notes
+          else
+            gh release upload "$RELEASE_TAG" "${assets[@]}" --repo "$GITHUB_REPOSITORY" --clobber
+          fi

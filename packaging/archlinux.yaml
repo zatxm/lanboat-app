@@ -1,0 +1,29 @@
+name: lanboat
+arch: ${ARCH}
+version: ${LANBOAT_VERSION}
+release: "1"
+description: Lightweight multiprotocol desktop proxy client
+homepage: https://github.com/zatxm/lanboat-app
+license: GPL-3.0-or-later
+depends:
+  - libx11
+  - zenity
+  - xdg-utils
+  - iproute2
+  - polkit
+  - util-linux
+recommends:
+  - 'noto-fonts-cjk: Chinese, Japanese, and Korean fonts'
+  - 'xorg-xwayland: X11 compatibility on Wayland desktops'
+contents:
+  - src: build/bin/lanboat
+    dst: /usr/bin/lanboat
+    file_info:
+      mode: 0755
+  - src: packaging/lanboat.desktop
+    dst: /usr/share/applications/lanboat.desktop
+  - src: packaging/lanboat.svg
+    dst: /usr/share/icons/hicolor/scalable/apps/lanboat.svg
+  - src: build/notices
+    dst: /usr/share/doc/lanboat
+    type: tree

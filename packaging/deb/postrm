@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+case "$1" in
+  remove|purge)
+    rm -f /var/lib/lanboat/install-user
+    rmdir /var/lib/lanboat 2>/dev/null || true
+    ;;
+esac

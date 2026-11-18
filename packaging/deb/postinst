@@ -1,0 +1,32 @@
+#!/bin/sh
+set -eu
+[ "$1" = configure ] || exit 0
+
+state=/var/lib/lanboat/install-user
+desktop_user=
+if [ -f "$state" ]; then
+  desktop_user=$(cat "$state")
+fi
+if [ -z "$desktop_user" ]; then
+  desktop_user=${SUDO_USER:-}
+fi
+if [ -z "$desktop_user" ] || [ "$desktop_user" = root ]; then
+  echo 'Install Lanboat with sudo from your desktop user account.' >&2
+  exit 1
+fi
+account=$(getent passwd "$desktop_user") || exit 1
+desktop_uid=$(printf '%s\n' "$account" | cut -d: -f3)
+desktop_home=$(printf '%s\n' "$account" | cut -d: -f6)
+case "$desktop_home" in
+  /|/root|'') echo 'A non-root desktop home directory is required.' >&2; exit 1 ;;
+  /*) ;;
+  *) echo 'The desktop home must be an absolute path.' >&2; exit 1 ;;
+esac
+[ "$desktop_uid" != 0 ] || exit 1
+
+# Retain the original desktop account across upgrades by other administrators.
+install -d -m 755 /var/lib/lanboat
+printf '%s\n' "$desktop_user" > "$state"
+chmod 644 "$state"
+runuser -u "$desktop_user" -- env LANBOAT_INSTALL_PREFIX="$desktop_home/.local" \
+  bash /usr/share/lanboat/install.sh

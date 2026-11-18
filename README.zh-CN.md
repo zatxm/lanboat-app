@@ -1,0 +1,44 @@
+# Lanboat
+
+[English](README.md) · **简体中文**
+
+Lanboat 是一款支持 Linux、Windows 和 macOS 的桌面代理客户端。你可以导入节点和订阅，选择流量转发方式，并在应用内管理 DNS 和连接日志。
+
+## 安装
+
+前往 [GitHub Releases](https://github.com/zatxm/lanboat-app/releases)，选择对应系统和处理器的安装包。Intel 和 AMD 的 x86-64 电脑选 `amd64` 或 `x86_64`，64 位 ARM 电脑选 `arm64` 或 `aarch64`。Apple 芯片的 Mac 选 `arm64`，Intel 芯片的 Mac 选 `amd64`。
+
+| 系统 | 安装包 | 安装方法 |
+| --- | --- | --- |
+| Ubuntu、Debian、Linux Mint | `.deb` | `sudo apt install ./文件名.deb` |
+| Fedora | `.rpm` | `sudo dnf install ./文件名.rpm` |
+| openSUSE | `.rpm` | `sudo zypper install ./文件名.rpm` |
+| Arch Linux、Manjaro、EndeavourOS、Arch Linux ARM | `.pkg.tar.zst` | `sudo pacman -U ./文件名.pkg.tar.zst` |
+| 其他使用 glibc 的 Linux 发行版 | `-linux-*.tar.gz` | 解压后以普通桌面用户运行 `./install.sh` |
+| Windows | `-setup.exe` | 运行安装程序，分别选择程序安装目录和数据目录 |
+| macOS | `.pkg` | 打开安装包，安装后从“应用程序”启动 Lanboat |
+
+Linux 用户请以普通桌面用户从应用菜单启动。Lanboat 需要 X11 或 XWayland 环境和 X11 客户端库（`libX11.so.6`），文件选择需要 Zenity。使用通用压缩包时，请通过系统的包管理器安装这些依赖。要卸载通用包，可在解压目录运行 `./uninstall.sh`。
+
+## 连接
+
+1. 在**首页**点击**导入**，粘贴节点链接或订阅地址，也可以上传配置文件。手动输入节点信息时点击**添加**。
+2. 选中节点并设置**代理模式**。**规则**按当前配置分流，**全局**通过选中节点转发，**直连**直接访问目标。
+3. 打开**连接**。需要使用本地代理的应用，可填入**设置 → 代理**页面显示的地址和端口。
+
+使用**延迟测试**比较节点。开启**自动选择**后，连接时会选用延迟最低的可用节点。Linux 可使用**全局+TUN**接管系统 TCP 和 UDP 流量，此模式需要 TUN 设备、`ip` 和 `pkexec` 命令以及系统授权。
+
+## 路由、DNS 和日志
+
+- 在**设置 → 代理**可允许局域网设备连接、开启用户名和密码认证，或设置前置代理。
+- 在**设置 → 路由规则**切换规则配置、管理自定义规则、选择国家和地区或调整更新频率。订阅自带的规则只作用于该订阅的节点。
+- 在**DNS设置**修改解析器、运行查询诊断或打开 DNS 泄漏检测。
+- 在**数据**页可分别开启代理日志和 DNS 日志，并设置自动清理间隔。代理日志在每个连接结束时记录目标、匹配规则、出站节点、持续时间和上下行流量，被拒绝或失败的连接立即记录；明文 HTTP 请求另记 URL 和请求方法。完整请求日志默认关闭，开启后会额外记录可见的 HTTP 请求头和最多 64 KiB 的正文，可能包含 Cookie、令牌和提交内容。HTTPS 保持加密，日志可查看加密连接的目标地址。日志页的**应用日志**显示 Lanboat 自身的事件，如连接、断开、更新与错误。
+
+## 备份与数据目录
+
+在**设置 → 备份**可分别备份节点、当前启用的路由规则或 DNS 设置。备份可能包含代理凭据，请妥善保管。
+
+在**设置 → 关于**可打开数据目录。Linux 和 macOS 默认使用 `~/.lanboat`。Windows 使用安装时选择的目录，默认是 `%USERPROFILE%\.lanboat`。卸载会保留数据目录。
+
+[第三方许可说明](THIRD_PARTY.md)
