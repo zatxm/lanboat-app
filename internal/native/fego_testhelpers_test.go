@@ -1,5 +1,3 @@
-//go:build !fltk
-
 package native
 
 func (w *widget) click() { w.dispatch("click", "") }

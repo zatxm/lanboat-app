@@ -11,11 +11,6 @@ import (
 )
 
 func TestNativeWindowDNSAndAbout(t *testing.T) {
-	if os.Getenv("LANBOAT_FLTK_TEST") != "1" {
-		t.Skip("isolated display required")
-	}
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
 	t.Setenv("TZ", "Asia/Shanghai")
 	bin := t.TempDir()
 	capture := filepath.Join(bin, "opened")

@@ -3,25 +3,19 @@ package native
 import (
 	"encoding/base64"
 	"github.com/zatxm/lanboat-app/internal/profile"
+	"image/png"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
 )
 
 func TestNativeWindowAmneziaRandomize(t *testing.T) {
-	if os.Getenv("LANBOAT_FLTK_TEST") != "1" {
-		t.Skip("isolated display required")
-	}
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
 	u := testUI(t)
 	u.notify = requestIdle
 	v, err := newView(u)
@@ -103,11 +97,6 @@ func TestNativeWindowAmneziaRandomize(t *testing.T) {
 }
 
 func TestNativeWindowSpecialForms(t *testing.T) {
-	if os.Getenv("LANBOAT_FLTK_TEST") != "1" {
-		t.Skip("isolated display required")
-	}
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
 	u := testUI(t)
 	u.notify = requestIdle
 	v, err := newView(u)
@@ -224,11 +213,6 @@ func TestLatencyJobDoesNotBlockOrReplacePageState(t *testing.T) {
 	}
 }
 func TestNativeWindowDetailedProtocolForms(t *testing.T) {
-	if os.Getenv("LANBOAT_FLTK_TEST") != "1" {
-		t.Skip("isolated display required")
-	}
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
 	u := testUI(t)
 	u.notify = requestIdle
 	v, err := newView(u)
@@ -393,11 +377,6 @@ func TestNativeWindowDetailedProtocolForms(t *testing.T) {
 }
 
 func TestNativeWindowHomeDeleteIconsAndLatencyScope(t *testing.T) {
-	if os.Getenv("LANBOAT_FLTK_TEST") != "1" {
-		t.Skip("isolated display required")
-	}
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
 	u := testUI(t)
 	u.notify = requestIdle
 	if _, err := u.backend.Import("ss://YWVzLTI1Ni1nY206cGFzcw@127.0.0.1:8388#delete-fixture"); err != nil {
@@ -488,11 +467,9 @@ func TestNativeWindowHomeDeleteIconsAndLatencyScope(t *testing.T) {
 
 func TestNativeWindowFormScreenshots(t *testing.T) {
 	dir := os.Getenv("LANBOAT_UI_SHOTS")
-	if dir == "" || os.Getenv("LANBOAT_FLTK_TEST") != "1" {
+	if dir == "" {
 		t.Skip("optional isolated visual capture")
 	}
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
 	u := testUI(t)
 	u.notify = requestIdle
 	v, err := newView(u)
@@ -521,17 +498,18 @@ func TestNativeWindowFormScreenshots(t *testing.T) {
 			v.inputs["opt.http-mask"].click()
 			pump()
 		}
-		for range 5 {
-			pump()
-			time.Sleep(15 * time.Millisecond)
+		v.tester.Step()
+		path := filepath.Join(dir, kind+".png")
+		file, err := os.Create(path)
+		if err != nil {
+			t.Fatal(err)
 		}
-		script := `from pathlib import Path
-import importlib.util,os,sys
-root=Path.cwd().parents[1]
-spec=importlib.util.spec_from_file_location('bench',root/'scripts/ui_capture.py');bench=importlib.util.module_from_spec(spec);spec.loader.exec_module(bench)
-d=bench.Display(os.environ['DISPLAY']);d.screenshot(Path(sys.argv[1]),1200,850);d.close()`
-		if output, err := exec.Command("python3", "-c", script, filepath.Join(dir, kind+".png")).CombinedOutput(); err != nil {
-			t.Fatal(err, string(output))
+		err = png.Encode(file, v.tester.Snapshot())
+		if closeErr := file.Close(); err == nil {
+			err = closeErr
+		}
+		if err != nil {
+			t.Fatal(err)
 		}
 	}
 }

@@ -2,18 +2,11 @@ package native
 
 import (
 	"errors"
-	"os"
-	"runtime"
 	"strings"
 	"testing"
 )
 
 func TestNativeWindowConnectivityAndFeedback(t *testing.T) {
-	if os.Getenv("LANBOAT_FLTK_TEST") != "1" {
-		t.Skip("isolated display required")
-	}
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
 	u := testUI(t)
 	u.notify = requestIdle
 	v, err := newView(u)
@@ -95,11 +88,6 @@ func TestNativeWindowConnectivityAndFeedback(t *testing.T) {
 }
 
 func TestNativeWindowLatencyUpdatesOnlyLabels(t *testing.T) {
-	if os.Getenv("LANBOAT_FLTK_TEST") != "1" {
-		t.Skip("isolated display required")
-	}
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
 	u := testUI(t)
 	u.notify = requestIdle
 	if _, err := u.backend.Import("ss://YWVzLTI1Ni1nY206cGFzcw@127.0.0.1:1#latency-fixture"); err != nil {
@@ -165,7 +153,7 @@ func TestNativeWindowLatencyUpdatesOnlyLabels(t *testing.T) {
 		}
 	}
 	for _, w := range v.widgets {
-		if w.text == "switch.conf" && w.classes == "node-row" {
+		if w.text == "switch.conf" && hasClass(w.classes, "routing-file-row") {
 			row = w
 		}
 	}

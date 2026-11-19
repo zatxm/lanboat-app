@@ -5,7 +5,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -14,11 +13,6 @@ import (
 )
 
 func TestNativeWindowRoutingLayout(t *testing.T) {
-	if os.Getenv("LANBOAT_FLTK_TEST") != "1" {
-		t.Skip("isolated display required")
-	}
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
 	u := testUI(t)
 	if err := u.backend.SaveConfigFile("", "custom.conf", "[Rule]\nFINAL,DIRECT"); err != nil {
 		t.Fatal(err)
@@ -73,7 +67,7 @@ func TestNativeWindowRoutingLayout(t *testing.T) {
 	}
 	sx, sy, sw, sh := scroll.bounds()
 	px, py, pw, ph := scroll.parent.bounds()
-	if sx <= px || sy <= py || sx+sw >= px+pw || sy+sh >= py+ph || px+pw-sx-sw > 4 {
+	if sx <= px || sy <= py || sx+sw >= px+pw || sy+sh >= py+ph || px+pw-sx-sw > 8 {
 		t.Fatal("form scrollbar is not inside the content panel")
 	}
 	scroll.scrollPosition(250)

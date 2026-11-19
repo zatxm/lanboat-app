@@ -2,18 +2,11 @@ package native
 
 import (
 	"github.com/zatxm/lanboat-app/internal/profile"
-	"os"
-	"runtime"
 	"strings"
 	"testing"
 )
 
 func TestNativeWindowConnectedEditorLocksOnlyActiveNode(t *testing.T) {
-	if os.Getenv("LANBOAT_FLTK_TEST") != "1" {
-		t.Skip("isolated display required")
-	}
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
 	u := testUI(t)
 	u.notify = requestIdle
 	v, err := newView(u)

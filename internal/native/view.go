@@ -268,11 +268,17 @@ func (v *nativeView) render() {
 		}
 	}
 
-	if v.editorScroll != nil && formOffset > 0 {
-		v.editorScroll.scrollPosition(formOffset)
-	}
 	v.show()
 	v.refresh()
+	if v.editorScroll != nil && formOffset > 0 {
+		// The replacement scroll view needs bounds before sending a scroll event.
+		if v.tester != nil {
+			v.tester.Step()
+		} else if painter, ok := v.events.(interface{ PaintIfDirty() }); ok {
+			painter.PaintIfDirty()
+		}
+		v.editorScroll.scrollPosition(formOffset)
+	}
 	if u.resetScroll {
 		v.top()
 		u.resetScroll = false

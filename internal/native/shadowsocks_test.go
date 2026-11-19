@@ -1,8 +1,6 @@
 package native
 
 import (
-	"os"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -11,11 +9,6 @@ import (
 )
 
 func TestNativeWindowShadowsocks(t *testing.T) {
-	if os.Getenv("LANBOAT_FLTK_TEST") != "1" {
-		t.Skip("isolated display required")
-	}
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
 	u := testUI(t)
 	u.notify = requestIdle
 	v, err := newView(u)
@@ -101,11 +94,6 @@ func TestNativeWindowShadowsocks(t *testing.T) {
 }
 
 func TestNativeWindowSSRAndPluginFields(t *testing.T) {
-	if os.Getenv("LANBOAT_FLTK_TEST") != "1" {
-		t.Skip("isolated display required")
-	}
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
 	u := testUI(t)
 	u.notify = requestIdle
 	v, err := newView(u)
@@ -153,11 +141,6 @@ func TestNativeWindowSSRAndPluginFields(t *testing.T) {
 }
 
 func TestNativeWindowShadowTLS(t *testing.T) {
-	if os.Getenv("LANBOAT_FLTK_TEST") != "1" {
-		t.Skip("isolated display required")
-	}
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
 	u := testUI(t)
 	u.notify = requestIdle
 	v, err := newView(u)

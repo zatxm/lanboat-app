@@ -5,19 +5,12 @@ import (
 	"github.com/zatxm/lanboat-app/internal/desktop"
 	"github.com/zatxm/lanboat-app/internal/profile"
 	"go.uber.org/zap"
-	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 )
 
 func benchmarkView(b *testing.B) *nativeView {
 	b.Helper()
-	if os.Getenv("LANBOAT_FLTK_TEST") != "1" {
-		b.Skip("isolated display required")
-	}
-	runtime.LockOSThread()
-	b.Cleanup(runtime.UnlockOSThread)
 	dir := b.TempDir()
 	c := profile.Default()
 	c.Settings.Language = "en"

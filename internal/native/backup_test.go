@@ -1,8 +1,6 @@
 package native
 
 import (
-	"os"
-	"runtime"
 	"testing"
 	"time"
 
@@ -37,11 +35,6 @@ func TestBackupLimitAndRestoreFlow(t *testing.T) {
 }
 
 func TestNativeWindowBackups(t *testing.T) {
-	if os.Getenv("LANBOAT_FLTK_TEST") != "1" {
-		t.Skip("isolated display required")
-	}
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
 	t.Setenv("TZ", "Asia/Shanghai")
 	u := testUI(t)
 	u.notify = requestIdle

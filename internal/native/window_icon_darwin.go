@@ -1,5 +1,3 @@
-//go:build darwin && !fltk
-
 package native
 
 import (

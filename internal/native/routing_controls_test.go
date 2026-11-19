@@ -2,8 +2,6 @@ package native
 
 import (
 	"fmt"
-	"os"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -11,11 +9,6 @@ import (
 )
 
 func TestNativeWindowRoutingControls(t *testing.T) {
-	if os.Getenv("LANBOAT_FLTK_TEST") != "1" {
-		t.Skip("isolated display required")
-	}
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
 	u := testUI(t)
 	u.notify = requestIdle
 	if err := u.backend.SaveConfigFile("", "visual.conf", "[Rule]\nDOMAIN,first.invalid,DIRECT\nFINAL,PROXY\n[Host]\nkeep.invalid=192.0.2.1"); err != nil {

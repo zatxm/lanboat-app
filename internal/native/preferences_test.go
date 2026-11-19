@@ -1,8 +1,6 @@
 package native
 
 import (
-	"os"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -12,11 +10,6 @@ import (
 )
 
 func TestNativeWindowPreferences(t *testing.T) {
-	if os.Getenv("LANBOAT_FLTK_TEST") != "1" {
-		t.Skip("isolated display required")
-	}
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
 	t.Setenv("TZ", "Asia/Shanghai")
 	u := testUI(t)
 	u.notify = requestIdle

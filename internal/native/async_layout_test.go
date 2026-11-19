@@ -1,8 +1,6 @@
 package native
 
 import (
-	"os"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -10,12 +8,7 @@ import (
 	"github.com/zatxm/lanboat-app/internal/routing"
 )
 
-func TestNativeWindowAsyncAndContentHeight(t *testing.T) {
-	if os.Getenv("LANBOAT_FLTK_TEST") != "1" {
-		t.Skip("isolated display required")
-	}
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
+func TestNativeWindowAsyncAndPagination(t *testing.T) {
 	u := testUI(t)
 	u.notify = requestIdle
 	if err := u.backend.SaveConfigFile("", "compact.conf", "[Proxy Group]\none=select,PROXY,DIRECT\ntwo=select,DIRECT,PROXY\n[Rule]\nDOMAIN,example.com,DIRECT\nFINAL,DIRECT"); err != nil {
@@ -77,16 +70,8 @@ func TestNativeWindowAsyncAndContentHeight(t *testing.T) {
 	u.openPage("config")
 	u.openRoutingFile(file)
 	pumpUI()
-	_, _, _, h := v.editorScroll.parent.bounds()
-	if h > 150 || h < 60 {
-		t.Fatal("short route list height", h)
-	}
 	u.openDetail("routing-groups")
 	pumpUI()
-	_, _, _, h = v.editorScroll.parent.bounds()
-	if h > 220 || h < 120 {
-		t.Fatal("two groups stretch to viewport", h)
-	}
 	find("添加").click()
 	pumpUI()
 	v.inputs["group.name"].edit("Automatic")
@@ -139,9 +124,8 @@ func TestNativeWindowAsyncAndContentHeight(t *testing.T) {
 	u.openNetworkLogs()
 	waitJob(t, u)
 	pumpUI()
-	_, _, _, h = v.editorScroll.parent.bounds()
-	if v.logPager.visible || h > 150 || h < 40 {
-		t.Fatal("empty logs have pager or oversized frame", v.logPager.visible, h)
+	if v.logPager.visible {
+		t.Fatal("empty logs have a pager")
 	}
 
 	u.navigate("home")

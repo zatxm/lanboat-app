@@ -1,5 +1,3 @@
-//go:build linux && !fltk
-
 package native
 
 import (

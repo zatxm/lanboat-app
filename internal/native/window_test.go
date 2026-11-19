@@ -1,8 +1,6 @@
 package native
 
 import (
-	"os"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -11,11 +9,6 @@ import (
 )
 
 func TestNativeWindow(t *testing.T) {
-	if os.Getenv("LANBOAT_FLTK_TEST") != "1" {
-		t.Skip("isolated display required")
-	}
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
 	u := testUI(t)
 	u.notify = requestIdle
 	v, err := newView(u)
@@ -119,7 +112,7 @@ func TestNativeWindow(t *testing.T) {
 				order = append(order, action.widget.text)
 			}
 		}
-		if strings.Join(order, ",") != "更新订阅,延迟检测,详情,分享订阅,删除订阅" {
+		if strings.Join(order, ",") != "更新订阅,延迟检测,订阅详情,分享订阅,删除订阅" {
 			t.Fatal("subscription action order", order)
 		}
 	}
@@ -139,7 +132,7 @@ func TestNativeWindow(t *testing.T) {
 	if u.editor != "" || len(u.state.Config.Nodes) != 1 || u.state.Config.Nodes[0].Source != "" {
 		t.Fatal("home import did not create local node")
 	}
-	click("添加")
+	click("添加节点")
 	if u.editor != "node" || u.draft.Type != "subscribe" || v.inputs["subURL"] == nil || !v.back.visible {
 		t.Fatal("unified subscription form missing")
 	}
@@ -286,7 +279,7 @@ func TestNativeWindow(t *testing.T) {
 			t.Fatal("root page has a title or back", page)
 		}
 		for _, c := range v.controls {
-			if c.widget.kind == "select" {
+			if c.widget.kind == "select" || hasClass(c.widget.classes, "search-field") {
 				continue
 			}
 			k := c.widget.classes

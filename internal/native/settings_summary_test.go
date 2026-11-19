@@ -1,18 +1,13 @@
 package native
 
 import (
-	"os"
-	"runtime"
+	"bytes"
+	"fmt"
 	"strings"
 	"testing"
 )
 
 func TestNativeWindowSettingsSummaryAndTextScroll(t *testing.T) {
-	if os.Getenv("LANBOAT_FLTK_TEST") != "1" {
-		t.Skip("isolated display required")
-	}
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
 	u := testUI(t)
 	u.notify = requestIdle
 	v, err := newView(u)
@@ -69,7 +64,13 @@ func TestNativeWindowSettingsSummaryAndTextScroll(t *testing.T) {
 	if text.nativeText() != original {
 		t.Fatal("readonly buffer changed")
 	}
-	if err := u.backend.SaveConfigFile("", "long.conf", "[Rule]\n"+strings.Repeat("DOMAIN,example.com,DIRECT\n", 700)+"FINAL,DIRECT"); err != nil {
+	var content strings.Builder
+	content.WriteString("[Rule]\n")
+	for i := range 700 {
+		fmt.Fprintf(&content, "DOMAIN,fixture%03d.test,DIRECT\n", i)
+	}
+	content.WriteString("FINAL,DIRECT")
+	if err := u.backend.SaveConfigFile("", "long.conf", content.String()); err != nil {
 		t.Fatal(err)
 	}
 	u.state = u.backend.GetState()
@@ -80,10 +81,11 @@ func TestNativeWindowSettingsSummaryAndTextScroll(t *testing.T) {
 	}
 	pump()
 	text = v.inputs["fileContent"]
+	before := v.tester.Snapshot()
 	text.scrollPosition(300)
 	pump()
-	if text.scrollPosition(-1) < 1 {
-		t.Fatal("editable text must scroll", text.scrollPosition(-1))
+	if bytes.Equal(before.Pix, v.tester.Snapshot().Pix) || v.scroll.scrollPosition(-1) != 0 {
+		t.Fatal("editable text must scroll internally")
 	}
 	text.edit("[Rule]\nFINAL,REJECT")
 	if u.field("fileContent").Text() != text.nativeText() {

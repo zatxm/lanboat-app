@@ -1,4 +1,4 @@
-//go:build (linux || windows) && !fltk
+//go:build linux || windows
 
 package native
 

@@ -1,8 +1,6 @@
 package native
 
 import (
-	"os"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -11,11 +9,6 @@ import (
 )
 
 func TestNativeWindowSharingPortAndNotifications(t *testing.T) {
-	if os.Getenv("LANBOAT_FLTK_TEST") != "1" {
-		t.Skip("isolated display required")
-	}
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
 	u := testUI(t)
 	u.notify = requestIdle
 	if err := u.backend.SaveNode(profile.Node{Type: "ss", Name: "分享测试", Server: "example.invalid", Port: 443, Method: "aes-256-gcm", Password: "fixture-secret"}); err != nil {

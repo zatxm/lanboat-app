@@ -4,7 +4,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -13,11 +12,6 @@ import (
 )
 
 func TestNativeWindowSubscriptionForm(t *testing.T) {
-	if os.Getenv("LANBOAT_FLTK_TEST") != "1" {
-		t.Skip("isolated display required")
-	}
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
 	u := testUI(t)
 	fixture, err := os.ReadFile("../profile/testdata/karing-subscription.txt")
 	if err != nil {

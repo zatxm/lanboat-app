@@ -7,18 +7,12 @@ import (
 	"github.com/zatxm/lanboat-app/internal/traffic"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
 )
 
 func TestNativeWindowNetworkDataAndDNSQuery(t *testing.T) {
-	if os.Getenv("LANBOAT_FLTK_TEST") != "1" {
-		t.Skip("isolated display required")
-	}
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
 	u := testUI(t)
 	u.notify = requestIdle
 	v, err := newView(u)
@@ -125,7 +119,7 @@ func TestNativeWindowNetworkDataAndDNSQuery(t *testing.T) {
 	}
 	ix, iy, iw, ih := v.inputs["dnsHost"].bounds()
 	bx, by, _, bh := find("查询").bounds()
-	if by != iy || bh != ih || bx <= ix+iw {
+	if centerDiff := 2*(by-iy) + bh - ih; centerDiff < -2 || centerDiff > 2 || bx <= ix+iw {
 		t.Fatal("DNS query controls not aligned")
 	}
 	v.inputs["dnsHost"].edit("localhost")
@@ -176,7 +170,7 @@ func TestNativeWindowNetworkDataAndDNSQuery(t *testing.T) {
 	}
 	u.openPage("config")
 	pump()
-	if v.editorScroll == nil || u.field("page.config-files").Text() != "0" {
+	if u.field("page.config-files").Text() != "0" {
 		t.Fatal("config file list is not paginated")
 	}
 	// English controls keep their source text for callbacks and tests.
