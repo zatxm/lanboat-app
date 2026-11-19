@@ -28,6 +28,7 @@ type App struct {
 	connectionMu     sync.Mutex
 	connectionCtx    context.Context
 	connectionCancel context.CancelFunc
+	connectedAt      int64
 	activeNode       string
 	switching        bool
 	connectionError  string
@@ -105,7 +106,7 @@ func New(dir, core string, log *zap.Logger, logs *Logs) (*App, error) {
 		}}}
 	a.networkLogs = traffic.New(filepath.Join(dir, "logs"))
 	a.networkLogs.SetEnabled(c.Settings.ProxyLog, c.Settings.DNSLog)
-	a.engine.SetRequestLogging(c.Settings.ProxyLog, c.Settings.ProxyLogFull)
+	a.engine.SetRequestLogging(c.Settings.ProxyLog)
 	a.engine.SetTrafficStore(a.networkLogs)
 	if err := ruledata.CompactInactive(a.ruleDataDir()); err != nil {
 		a.log.Warn("compress inactive rule data", zap.Error(err))
@@ -175,6 +176,11 @@ func (a *App) status(traffic bool) Status {
 		}
 	}
 	switching := a.switching
+	if s.Connected {
+		s.StartedAt = a.connectedAt
+	} else {
+		a.connectedAt = 0
+	}
 	if !s.Connected && a.connectionCancel != nil {
 		a.connectionCancel()
 		a.connectionCtx = nil
@@ -226,7 +232,7 @@ func (a *App) commitWithRuleData(c profile.Config, force bool, restoreData func(
 	oldFiles := a.config.Files
 	a.config = c
 	a.networkLogs.SetEnabled(c.Settings.ProxyLog, c.Settings.DNSLog)
-	a.engine.SetRequestLogging(c.Settings.ProxyLog, c.Settings.ProxyLogFull)
+	a.engine.SetRequestLogging(c.Settings.ProxyLog)
 	if !filesChanged {
 		return nil
 	}
@@ -756,6 +762,7 @@ func (a *App) Connect() error {
 	}
 	a.log.Info("connected", fields...)
 	a.mu.Lock()
+	a.connectedAt = a.engine.State().StartedAt
 	a.activeNode = c.Selected
 	if c.Settings.Mode == "direct" {
 		a.activeNode = ""
@@ -784,6 +791,7 @@ func (a *App) Disconnect() error {
 	a.connectionCtx = nil
 	a.activeNode = ""
 	a.switching = false
+	a.connectedAt = 0
 	a.connectionError = ""
 	return a.proxy.Restore()
 }

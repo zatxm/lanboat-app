@@ -10,16 +10,12 @@ import (
 func coreProfileRules(p *routing.Parsed) ([]any, []any) {
 	var rules, sets []any
 	seen := map[string]bool{}
-	resolved := false
 	for _, r := range p.Rules {
 		if r.Type == "USER-AGENT" {
 			continue
 		}
 
-		if !resolved && !r.NoResolve && (r.Type == "IP-CIDR" || r.Type == "IP-CIDR6" || r.Type == "GEOIP" || r.Type == "IP-ASN" || r.Type == "IP-SET" || r.Type == "MRS-IP" || (r.Type == "NATIVE" || r.Type == "SRS-SET") && routing.RuleSetNeedsIP(r.SetRules) || r.Type == "RULE-SET" && (routing.RuleSetNeedsIP(r.SetRules) || strings.HasPrefix(r.Value, "lanboat://geoip/"))) {
-			rules = append(rules, map[string]any{"action": "resolve"})
-			resolved = true
-		}
+		// The core resolves IP predicates lazily while preserving the hostname for the outbound.
 		rule := map[string]any{"action": "route", "outbound": r.Action}
 		if r.Action == "reject" {
 			rule["action"] = "reject"

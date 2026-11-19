@@ -28,12 +28,13 @@ jobs:
         arch: [amd64, arm64]
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           persist-credentials: false
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
+          cache-dependency-path: go.sum
       - name: Validate release version
         run: |
           [[ "$RELEASE_TAG" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]]
@@ -54,13 +55,14 @@ jobs:
           ARCH: ${{ matrix.arch }}
         run: |
           bash scripts/notices.sh
+          TZ=Asia/Shanghai git log -1 --format=%cd --date=format-local:%y.%m%d.%H%M%S > build/app-version.txt
           case "$PLATFORM" in
             Linux) target=linux; suffix= ;;
             Windows) target=windows; suffix=.exe ;;
             macOS) target=darwin; suffix= ;;
           esac
           bash scripts/build-release.sh "$target" "$ARCH" "build/bin/Lanboat$suffix"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: binary-${{ matrix.platform }}-${{ matrix.arch }}
           path: build/
@@ -80,16 +82,19 @@ jobs:
           - {platform: macOS, arch: arm64, runner: macos-15}
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: binary-${{ matrix.platform }}-${{ matrix.arch }}
           path: build/
       - shell: bash
         run: |
           echo "LANBOAT_VERSION=${RELEASE_TAG#v}" >> "$GITHUB_ENV"
+          read -r app_version < build/app-version.txt
+          [[ "$app_version" =~ ^[0-9]{2}\.[0-9]{4}\.[0-9]{6}$ ]]
+          echo "LANBOAT_APP_VERSION=$app_version" >> "$GITHUB_ENV"
           mkdir -p dist
       - name: Package Linux
         if: matrix.platform == 'Linux'
@@ -99,7 +104,7 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y rpm
           chmod +x build/bin/Lanboat
-          test "$(build/bin/Lanboat --version)" = "$LANBOAT_VERSION"
+          test "$(build/bin/Lanboat --version)" = "$LANBOAT_APP_VERSION"
           mv build/bin/Lanboat build/bin/lanboat
           LANBOAT_PACKAGE_PREBUILT=1 bash scripts/package-linux.sh
           rpmbuild -bb --define "_topdir $RUNNER_TEMP/rpm" --define "app_root $PWD" --define "app_version $LANBOAT_VERSION" packaging/lanboat.spec
@@ -117,7 +122,7 @@ jobs:
         if: matrix.platform == 'Linux'
         env:
           ARCH: ${{ matrix.arch }}
-        run: bash scripts/test-linux-installers.sh "$ARCH" "$LANBOAT_VERSION"
+        run: bash scripts/test-linux-installers.sh "$ARCH" "$LANBOAT_VERSION" "$LANBOAT_APP_VERSION"
       - name: Package Windows
         if: matrix.platform == 'Windows'
         shell: pwsh
@@ -147,7 +152,7 @@ jobs:
           $binary = Join-Path $install 'Lanboat.exe'
           $versionFile = Join-Path $env:RUNNER_TEMP 'lanboat-version.txt'
           $probe = Start-Process $binary -ArgumentList '--version' -RedirectStandardOutput $versionFile -PassThru -Wait
-          if ($probe.ExitCode -ne 0 -or (Get-Content $versionFile -Raw).Trim() -ne $env:LANBOAT_VERSION) {
+          if ($probe.ExitCode -ne 0 -or (Get-Content $versionFile -Raw).Trim() -ne $env:LANBOAT_APP_VERSION) {
             throw 'Installed version check failed'
           }
           $app = Start-Process $binary -PassThru
@@ -161,7 +166,7 @@ jobs:
           ARCH: ${{ matrix.arch }}
         run: |
           chmod +x build/bin/Lanboat
-          test "$(build/bin/Lanboat --version)" = "$LANBOAT_VERSION"
+          test "$(build/bin/Lanboat --version)" = "$LANBOAT_APP_VERSION"
           bash packaging/macos/package.sh "$ARCH"
       - name: Test macOS installer
         if: matrix.platform == 'macOS'
@@ -174,8 +179,8 @@ jobs:
           app=/Applications/Lanboat.app
           codesign --verify --strict "$app"
           test "$(lipo -archs "$app/Contents/MacOS/Lanboat")" = "$machine"
-          test "$("$app/Contents/MacOS/Lanboat" --version)" = "$LANBOAT_VERSION"
-      - uses: actions/upload-artifact@v4
+          test "$("$app/Contents/MacOS/Lanboat" --version)" = "$LANBOAT_APP_VERSION"
+      - uses: actions/upload-artifact@v6
         with:
           name: installers-${{ matrix.platform }}-${{ matrix.arch }}
           path: |
@@ -193,7 +198,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           pattern: installers-*
           merge-multiple: true

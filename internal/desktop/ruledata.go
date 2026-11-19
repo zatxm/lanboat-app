@@ -116,3 +116,18 @@ func (a *App) RunRuleUpdates(done <-chan struct{}) {
 		}
 	}
 }
+
+func (a *App) CountryIndex(previous string, index ruledata.CountryIndex) (string, ruledata.CountryIndex, error) {
+	a.ruleUpdateMu.Lock()
+	defer a.ruleUpdateMu.Unlock()
+	root := a.ruleDataDir()
+	if err := ruledata.Ensure(root); err != nil {
+		return "", ruledata.CountryIndex{}, err
+	}
+	dir, err := ruledata.Current(root)
+	if err != nil || dir == previous {
+		return previous, index, err
+	}
+	index, err = ruledata.LoadCountries(dir)
+	return dir, index, err
+}

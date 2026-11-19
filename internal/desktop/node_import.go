@@ -1,10 +1,12 @@
 package desktop
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
 	"path"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -34,11 +36,19 @@ func githubRaw(raw string) string {
 
 func (a *App) Import(content string) (int, error) {
 	content = strings.TrimSpace(content)
-	if strings.HasPrefix(content, "/") || strings.HasPrefix(content, "~/") {
+	if filepath.IsAbs(content) || strings.HasPrefix(content, "~/") {
 		var err error
-		content, err = a.readImport(content, profile.MaxImport)
+		content, err = a.readImport(content, profile.MaxConfig)
 		if err != nil {
 			return 0, err
+		}
+	}
+	if len(content) <= profile.MaxConfig && strings.HasPrefix(content, "{") {
+		var kind struct {
+			Format string `json:"format"`
+		}
+		if json.Unmarshal([]byte(content), &kind) == nil && strings.HasPrefix(kind.Format, "lanboat-nodes/") {
+			return a.importNodeBundle(content)
 		}
 	}
 	if len(content) > profile.MaxImport {

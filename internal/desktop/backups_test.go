@@ -39,229 +39,6 @@ func seedBackupApp(t *testing.T) *App {
 	}
 	return a
 }
-func TestBackupsRestoreOnlyTheirCategory(t *testing.T) {
-	for _, kind := range []string{"nodes", "routing", "dns"} {
-		t.Run(kind, func(t *testing.T) {
-			a := seedBackupApp(t)
-			original := a.GetState().Config
-			info, err := a.CreateBackup(kind)
-			if err != nil || info.Kind != kind {
-				t.Fatal(info, err)
-			}
-			snapshot, err := a.readBackup(info.ID)
-			if err != nil || snapshot.validate() != nil {
-				t.Fatal(err)
-			}
-			if info.Kind != "nodes" && len(snapshot.Nodes) != 0 || info.Kind != "routing" && snapshot.Routing != nil || info.Kind != "dns" && snapshot.DNS != nil {
-				t.Fatal("mixed-category backup")
-			}
-			if err = a.SaveNode(profile.Node{Name: "later", Server: "later.test", Port: 443, Method: "aes-256-gcm", Password: "later"}); err != nil {
-				t.Fatal(err)
-			}
-			if err = a.ActivateConfigFile("default"); err != nil {
-				t.Fatal(err)
-			}
-			s := a.GetState().Config.Settings
-			d := *s.DNS
-			d.Capacity = 8192
-			s.DNS = &d
-			if err = a.SaveSettings(s); err != nil {
-				t.Fatal(err)
-			}
-			before := a.GetState().Config
-			if err = a.RestoreBackup(info.ID); err != nil {
-				t.Fatal(err)
-			}
-			after := a.GetState().Config
-			switch kind {
-			case "nodes":
-				if len(after.Nodes) != 1 || after.Nodes[0].Name != "original" || after.ActiveFile != before.ActiveFile || !reflect.DeepEqual(after.Settings.DNS, before.Settings.DNS) {
-					t.Fatal("node restore touched other categories")
-				}
-				stored, _ := profile.Load(a.path)
-				if stored.Nodes[0].Password != "private" {
-					t.Fatal("credentials lost")
-				}
-			case "routing":
-				if after.ActiveFile != original.ActiveFile || !reflect.DeepEqual(after.Nodes, before.Nodes) || !reflect.DeepEqual(after.Settings.DNS, before.Settings.DNS) {
-					t.Fatal("routing restore touched other categories")
-				}
-			case "dns":
-				if after.Settings.DNS.Capacity != 2048 || !reflect.DeepEqual(after.Nodes, before.Nodes) || after.ActiveFile != before.ActiveFile {
-					t.Fatal("DNS restore touched other categories")
-				}
-			}
-		})
-	}
-}
-func TestBackupRetentionIsPerCategory(t *testing.T) {
-	a := seedBackupApp(t)
-	for _, kind := range []string{"nodes", "routing", "dns"} {
-		for i := 0; i < MaxBackups+1; i++ {
-			if _, err := a.CreateBackup(kind); err != nil {
-				t.Fatal(err)
-			}
-		}
-	}
-	list := a.Backups()
-	if len(list) != 3*MaxBackups {
-		t.Fatal(len(list))
-	}
-	counts := map[string]int{}
-	for _, b := range list {
-		counts[b.Kind]++
-	}
-	for _, n := range counts {
-		if n != MaxBackups {
-			t.Fatal(counts)
-		}
-	}
-}
-func TestBackupExportAndValidation(t *testing.T) {
-	a := seedBackupApp(t)
-	info, err := a.CreateBackup("dns")
-	if err != nil {
-		t.Fatal(err)
-	}
-	stat, _ := os.Stat(filepath.Join(backupDir(a.path), info.ID))
-	if stat.Mode().Perm() != 0600 {
-		t.Fatal("backup permissions")
-	}
-	path, err := a.ExportBackupTo(info.ID, t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	raw, _ := os.ReadFile(path)
-	if err = a.RestoreBackup(info.ID); err != nil {
-		t.Fatal(err)
-	}
-	if err = a.DeleteBackup(info.ID); err != nil {
-		t.Fatal(err)
-	}
-	after, _ := os.ReadFile(path)
-	if !bytes.Equal(raw, after) {
-		t.Fatal("export changed")
-	}
-	for _, id := range []string{"", "../config.json", "backup-x.json/../config.json", "config.json"} {
-		if a.DeleteBackup(id) == nil {
-			t.Fatal("unsafe delete", id)
-		}
-		if a.RestoreBackup(id) == nil {
-			t.Fatal("unsafe restore", id)
-		}
-	}
-	for i, b := range []Backup{{Version: 1, Kind: "nodes"}, {Version: 2, Kind: "unknown"}, {Version: 2, Kind: "dns"}, {Version: 2, Kind: "routing"}, {Version: 2, Kind: "nodes", DNS: func() *profile.DNSSettings { d := profile.DefaultDNS(); return &d }()}} {
-		b.CreatedAt = time.Now()
-		raw, _ := json.Marshal(b)
-		p := filepath.Join(backupDir(a.path), fmt.Sprintf("backup-bad-%d.json", i))
-		os.WriteFile(p, raw, 0600)
-		before, _ := os.ReadFile(a.path)
-		if a.RestoreBackup(filepath.Base(p)) == nil {
-			t.Fatal("invalid snapshot accepted", i)
-		}
-		now, _ := os.ReadFile(a.path)
-		if !bytes.Equal(before, now) {
-			t.Fatal("failed restore changed profile")
-		}
-	}
-}
-func TestNodeBackupIncludesSubscriptions(t *testing.T) {
-	a := seedBackupApp(t)
-	a.mu.Lock()
-	a.config.Subscriptions = []profile.Subscription{{ID: "sub", Name: "fixture", URL: "https://example.test/sub"}}
-	a.mu.Unlock()
-	b, err := a.CreateBackup("nodes")
-	if err != nil {
-		t.Fatal(err)
-	}
-	a.mu.Lock()
-	a.config.Subscriptions = nil
-	a.mu.Unlock()
-	if err = a.RestoreBackup(b.ID); err != nil {
-		t.Fatal(err)
-	}
-	if len(a.GetState().Config.Subscriptions) != 1 {
-		t.Fatal("subscription lost")
-	}
-}
-
-func TestRoutingBackupRejectsLegacyJSON(t *testing.T) {
-	a := testApp(t)
-	b := Backup{Version: 2, Kind: "routing", CreatedAt: time.Now(), Routing: &BackupRouting{Name: "default.conf", Content: "[Rule]\nFINAL,DIRECT"}}
-	raw, _ := json.Marshal(b)
-	if err := os.MkdirAll(backupDir(a.path), 0700); err != nil {
-		t.Fatal(err)
-	}
-	path := filepath.Join(backupDir(a.path), "backup-routing-old.json")
-	if err := os.WriteFile(path, raw, 0600); err != nil {
-		t.Fatal(err)
-	}
-	if err := a.RestoreBackup(filepath.Base(path)); err == nil {
-		t.Fatal("accepted deprecated JSON routing backup")
-	}
-	if len(a.Backups()) != 0 {
-		t.Fatal("deprecated routing backup listed")
-	}
-	a.pruneBackups("routing")
-	if _, err := os.Stat(path); err != nil {
-		t.Fatal("deprecated backup was deleted", err)
-	}
-}
-
-func TestRoutingArchiveRestoresAnOlderDefaultExactly(t *testing.T) {
-	a := testApp(t)
-	b := Backup{Version: 3, Kind: "routing", CreatedAt: time.Now(), Routing: &BackupRouting{Name: "default.conf", Content: "[Rule]\nDOMAIN,old-default.test,REJECT\nFINAL,DIRECT"}}
-	if err := os.MkdirAll(backupDir(a.path), 0700); err != nil {
-		t.Fatal(err)
-	}
-	if err := ruledata.Ensure(a.ruleDataDir()); err != nil {
-		t.Fatal(err)
-	}
-	path := filepath.Join(backupDir(a.path), "backup-routing-old.tar.gz")
-	if err := writeRoutingBackup(path, b, a.ruleDataDir()); err != nil {
-		t.Fatal(err)
-	}
-	if err := a.RestoreBackup(filepath.Base(path)); err != nil {
-		t.Fatal(err)
-	}
-	c := a.GetState().Config
-	if c.ActiveFile == "default" {
-		t.Fatal("backup content replaced by today's bundled default")
-	}
-	for _, f := range c.Files {
-		if f.ID == c.ActiveFile && f.Content != b.Routing.Content {
-			t.Fatal("backup content changed")
-		}
-	}
-}
-func TestNodeRestoreDoesNotSilentlyResetDNSOutbound(t *testing.T) {
-	a := seedBackupApp(t)
-	snapshot, err := a.CreateBackup("nodes")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = a.SaveNode(profile.Node{Name: "dns-node", Server: "dns.test", Port: 443, Method: "aes-256-gcm", Password: "private"}); err != nil {
-		t.Fatal(err)
-	}
-	c := a.GetState().Config
-	d := profile.DefaultDNS()
-	d.ProxyRoute = "node"
-	d.ProxyNode = c.Nodes[len(c.Nodes)-1].ID
-	s := c.Settings
-	s.DNS = &d
-	if err = a.SaveSettings(s); err != nil {
-		t.Fatal(err)
-	}
-	before, _ := os.ReadFile(a.path)
-	if a.RestoreBackup(snapshot.ID) == nil {
-		t.Fatal("lost DNS outbound node")
-	}
-	after, _ := os.ReadFile(a.path)
-	if !bytes.Equal(before, after) {
-		t.Fatal("failed restore changed data")
-	}
-}
-
 func TestRoutingBackupContainsAndRestoresGenerations(t *testing.T) {
 	a := seedBackupApp(t)
 	root := a.ruleDataDir()
@@ -283,7 +60,7 @@ func TestRoutingBackupContainsAndRestoresGenerations(t *testing.T) {
 	if err = ruledata.Activate(root, second); err != nil {
 		t.Fatal(err)
 	}
-	info, err := a.CreateBackup("routing")
+	info, err := a.CreateBackup()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -302,7 +79,7 @@ func TestRoutingBackupContainsAndRestoresGenerations(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(stage)
-	if b.Version != 3 || active != filepath.Base(second) {
+	if b.Version != 1 || active != filepath.Base(second) {
 		t.Fatal(b.Version, active)
 	}
 	if _, err = os.Stat(filepath.Join(stage, filepath.Base(first)+".tar.gz")); err != nil {
@@ -356,7 +133,10 @@ func TestRoutingBackupContainsAndRestoresGenerations(t *testing.T) {
 
 func TestCorruptRoutingBackupDoesNotChangeCurrentGeneration(t *testing.T) {
 	a := seedBackupApp(t)
-	info, err := a.CreateBackup("routing")
+	if err := ruledata.Ensure(a.ruleDataDir()); err != nil {
+		t.Fatal(err)
+	}
+	info, err := a.CreateBackup()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -396,7 +176,7 @@ func TestRoutingBackupRestoreWhileConnected(t *testing.T) {
 	if err := a.Connect(); err != nil {
 		t.Fatal(err)
 	}
-	info, err := a.CreateBackup("routing")
+	info, err := a.CreateBackup()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -426,28 +206,107 @@ func TestRoutingBackupRestoreWhileConnected(t *testing.T) {
 	}
 }
 
-func TestNodeBackupRestoresSourceRules(t *testing.T) {
+func TestSettingsSnapshots(t *testing.T) {
 	a := seedBackupApp(t)
-	a.mu.Lock()
-	node := a.config.Nodes[0]
-	a.config.RuleOverlays = []profile.RuleOverlay{{ID: "import", Name: "local", NodeIDs: []string{node.ID}, Content: "[Rule]\nDOMAIN,backup.test,REJECT"}}
-	a.mu.Unlock()
-	info, err := a.CreateBackup("nodes")
+	for i := 0; i < MaxBackups; i++ {
+		if _, err := a.CreateBackup(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	list := a.Backups()
+	if _, err := a.CreateBackup(); err == nil || !reflect.DeepEqual(list, a.Backups()) {
+		t.Fatal("creating a fourth backup changed the saved records")
+	}
+	if len(list) != MaxBackups {
+		t.Fatal(len(list))
+	}
+	path, err := a.ExportBackupTo(list[0].ID, t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	a.mu.Lock()
-	a.config.RuleOverlays = nil
-	a.mu.Unlock()
-	if err = a.RestoreBackup(info.ID); err != nil {
+	other := testApp(t)
+	if err := other.ImportBackup(path); err != nil {
 		t.Fatal(err)
 	}
-	restored := a.GetState().Config
-	if len(restored.RuleOverlays) != 1 || restored.RuleOverlays[0].NodeIDs[0] != node.ID {
-		t.Fatal("node source rules not restored")
+	if !reflect.DeepEqual(a.config, other.config) {
+		t.Fatal("incomplete settings roundtrip")
 	}
-	p, err := profile.EffectiveRouting(restored)
-	if err != nil || p.Rules[0].Value != "backup.test" {
-		t.Fatal(p, err)
+	before, _ := json.Marshal(other.config)
+	if err := other.ImportBackup("{}"); err == nil {
+		t.Fatal("accepted invalid backup")
+	}
+	after, _ := json.Marshal(other.config)
+	if !bytes.Equal(before, after) {
+		t.Fatal("modified config")
+	}
+}
+
+func TestFullSettingsTransfer(t *testing.T) {
+	a := seedBackupApp(t)
+	c := a.config
+	id := c.Nodes[0].ID
+	c.Selected = id
+	c.Nodes[0].Source = "subscription"
+	c.Subscriptions = []profile.Subscription{{ID: "subscription", Name: "test", URL: "https://feed.example/test", Password: "fixture-key", UserAgent: "Lanboat", Filter: "example", MaxNodes: 37, KeepRules: true, UDP: "true"}}
+	c.RuleOverlays = []profile.RuleOverlay{{ID: "extra", Name: "test", SubscriptionID: "subscription", NodeIDs: []string{id}, Content: "[Rule]\nDOMAIN,extra.example,REJECT"}}
+	c.Rules = []profile.Rule{{ID: "custom", Type: "domain", Value: "direct.example", Action: "direct"}}
+	off, read := false, 8192
+	s := &c.Settings
+	s.Port, s.Mode, s.Language, s.Appearance = 32108, "tun", "en", "dark"
+	s.AutoSelect, s.UpdateOnStart, s.ProxyLog, s.DNSLog, s.LogRetention = true, true, true, true, 17
+	s.RuleAutoUpdate, s.RuleUpdateDays, s.RuleRegion = &off, 6, "us"
+	s.SpeedURL, s.TestURL, s.TestTimeout, s.TestConcurrency = "https://speed.example/", "https://delay.example/test", 9, 7
+	s.Proxy = profile.ProxySettings{AllowLAN: true, Authentication: true, Username: "user", Password: "local-secret", Upstream: profile.UpstreamProxy{Enabled: true, Type: "http", Server: "proxy.example", Port: 8081, Username: "upstream", Password: "upstream-secret"}}
+	s.TCP = profile.TCPSettings{Fingerprint: "Firefox120", MaxRead: &read}
+	s.UDP = profile.UDPSettings{Relay: &off, BlockSTUN: true, Ports: "53,443", Timeout: 43}
+	s.DNS.ProxyRoute, s.DNS.ProxyNode, s.DNS.Policy = "node", id, "DOMAIN-SUFFIX,test.example,direct"
+	s.DNS.FakeIP, s.DNS.Persist = true, true
+	if err := a.commit(c); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(t.TempDir(), "settings {export}")
+	if err := os.Mkdir(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	for _, format := range []string{"backup JSON", "archive", "old duplicate archive"} {
+		t.Run(format, func(t *testing.T) {
+			if format != "backup JSON" {
+				if err := ruledata.Ensure(a.ruleDataDir()); err != nil {
+					t.Fatal(err)
+				}
+			}
+			b, err := a.CreateBackup()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err = a.ExportBackupTo(b.ID, dir); err != nil {
+				t.Fatal(err)
+			}
+			path, err := a.ExportBackupTo(b.ID, dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if format != "backup JSON" && !strings.HasSuffix(path, "-2.tar.gz") {
+				t.Fatal(path)
+			}
+			if format == "old duplicate archive" {
+				old := strings.TrimSuffix(path, "-2.tar.gz") + ".tar-2.gz"
+				if err = os.Rename(path, old); err != nil {
+					t.Fatal(err)
+				}
+				path = old
+			}
+			target := testApp(t)
+			if err := target.ImportBackup(path); err != nil {
+				t.Fatal(err)
+			}
+			reopened, err := New(filepath.Dir(target.path), "", target.log, &Logs{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(c, reopened.config) {
+				t.Fatal("persisted configuration differs after restore and restart")
+			}
+		})
 	}
 }

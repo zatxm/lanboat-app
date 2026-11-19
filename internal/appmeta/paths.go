@@ -4,13 +4,31 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime/debug"
+	"time"
 
 	"github.com/zatxm/lanboat-app/internal/profile"
 )
 
 const Name = "Lanboat"
 const ID = "lanboat"
-var Version = "1.0.0"
+
+var Version = buildVersion()
+
+func buildVersion() string {
+	if info, ok := debug.ReadBuildInfo(); ok {
+		for _, setting := range info.Settings {
+			if setting.Key == "vcs.time" {
+				if committed, err := time.Parse(time.RFC3339, setting.Value); err == nil {
+					beijing := time.FixedZone("UTC+8", 8*60*60)
+					return committed.In(beijing).Format("06.0102.150405")
+				}
+				break
+			}
+		}
+	}
+	return "dev"
+}
 
 func DataDir() (string, error) {
 	if override := os.Getenv("LANBOAT_HOME"); override != "" {

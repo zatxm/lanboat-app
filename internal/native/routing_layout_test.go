@@ -60,22 +60,10 @@ func TestNativeWindowRoutingLayout(t *testing.T) {
 	}
 	v.render()
 	pumpUI()
-	var logo, title *widget
 	for _, w := range v.widgets {
-		if w.kind == "icon" && w.text == "sail" {
-			logo = w
+		if (w.kind == "icon" && w.text == "sail") || strings.Contains(w.classes, "brand-title") {
+			t.Fatal("branding still occupies the sidebar")
 		}
-		if strings.Contains(w.classes, "brand-title") {
-			title = w
-		}
-	}
-	if logo == nil || title == nil {
-		t.Fatal("missing sidebar brand")
-	}
-	_, ly, _, lh := logo.bounds()
-	_, ty, _, th := title.bounds()
-	if ly+lh/2 != ty+th/2 {
-		t.Fatalf("brand misaligned: logo %d title %d", ly+lh/2, ty+th/2)
 	}
 	u.editNode(profile.Node{Type: "vmess"})
 	pumpUI()
@@ -138,7 +126,7 @@ func TestNativeWindowRoutingLayout(t *testing.T) {
 		t.Fatal("country label and selector are not on one line")
 	}
 	rx, _, rw, _ := find("default.conf").bounds()
-	sx, _, sw, _ = v.editorScroll.bounds()
+	sx, _, sw, _ = find("default.conf").parent.bounds()
 	if rx != sx || rw != sw {
 		t.Fatalf("selected row leaves a gap: row=%d,%d scroll=%d,%d", rx, rw, sx, sw)
 	}

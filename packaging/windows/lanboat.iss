@@ -11,12 +11,14 @@ OutputDir=..\..\dist
 OutputBaseFilename=Lanboat-{#Version}-windows-{#CPU}-setup
 Compression=lzma2/max
 SolidCompression=yes
-UninstallDisplayIcon={app}\Lanboat.exe
+SetupIconFile=lanboat.ico
+UninstallDisplayIcon={app}\lanboat.ico
 [Files]
+Source: "lanboat.ico"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\build\bin\Lanboat.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\build\notices\*"; DestDir: "{app}\notices"; Flags: recursesubdirs
 [Icons]
-Name: "{userprograms}\Lanboat"; Filename: "{app}\Lanboat.exe"
+Name: "{userprograms}\Lanboat"; Filename: "{app}\Lanboat.exe"; IconFilename: "{app}\lanboat.ico"
 [Registry]
 Root: HKCU; Subkey: "Software\Lanboat"; ValueType: string; ValueName: "DataDir"; ValueData: "{code:DataPath}"; Flags: uninsdeletevalue
 [Code]

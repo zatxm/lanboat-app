@@ -83,7 +83,6 @@ type Settings struct {
 	SpeedURL        string   `json:"speedURL,omitempty"`
 	SpeedURLs       []string `json:"speedURLs,omitempty"`
 	TestURLs        []string `json:"testURLs,omitempty"`
-	ProxyLogFull    bool     `json:"proxyLogFull,omitempty"`
 	ProxyLog        bool     `json:"proxyLog,omitempty"`
 	DNSLog          bool     `json:"dnsLog,omitempty"`
 	LogRetention    int      `json:"logRetention,omitempty"`
@@ -375,26 +374,35 @@ func Load(path string) (Config, error) {
 	if err := json.Unmarshal(b, &c); err != nil {
 		return c, fmt.Errorf("配置损坏，已保留原文件：%w", err)
 	}
+	err = c.ValidateSnapshot()
+	return c, err
+}
+func (c *Config) ValidateSnapshot() error {
 	if c.Version != 1 {
-		return c, errors.New("配置版本不受支持")
+		return errors.New("配置版本不受支持")
 	}
 	if len(c.Nodes) > MaxNodes || len(c.Rules) > 500 || len(c.Subscriptions) > 30 {
-		return c, errors.New("配置条目超过限制")
+		return errors.New("配置条目超过限制")
 	}
 	ids := map[string]bool{}
 	for _, n := range c.Nodes {
 		if n.ID == "" || ids[n.ID] {
-			return c, errors.New("配置中节点标识无效或重复")
+			return errors.New("配置中节点标识无效或重复")
 		}
 		ids[n.ID] = true
 	}
 	if c.Selected != "" && !ids[c.Selected] {
-		return c, errors.New("配置中选定的节点不存在")
+		return errors.New("配置中选定的节点不存在")
 	}
+	subs := map[string]bool{}
 	for _, s := range c.Subscriptions {
-		if s.ID == "" || s.Validate() != nil {
-			return c, errors.New("配置中的订阅无效")
+		if s.ID == "" || subs[s.ID] || s.Validate() != nil {
+			return errors.New("配置中的订阅无效")
 		}
+		subs[s.ID] = true
+	}
+	if d := c.Settings.DNS; d != nil && d.ProxyRoute == "node" && !ids[d.ProxyNode] {
+		return errors.New("DNS出站节点不存在")
 	}
 	c.Settings.TestMethod = ""
 	c.Settings.SpeedURLs = nil
@@ -409,25 +417,25 @@ func Load(path string) (Config, error) {
 		}
 	}
 	if err := c.Settings.Validate(); err != nil {
-		return c, err
+		return err
 	}
 	for _, n := range c.Nodes {
 		if err := n.Validate(); err != nil {
-			return c, err
+			return err
 		}
 	}
 	for _, r := range c.Rules {
 		if err := r.Validate(); err != nil {
-			return c, err
+			return err
 		}
 	}
 	if err := ValidateRuleOverlays(c.RuleOverlays); err != nil {
-		return c, err
+		return err
 	}
-	if err := ValidateFiles(c); err != nil {
-		return c, err
+	if err := ValidateFiles(*c); err != nil {
+		return err
 	}
-	return c, nil
+	return nil
 }
 
 func Save(path string, c Config) error {

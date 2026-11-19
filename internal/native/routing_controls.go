@@ -283,20 +283,17 @@ func (v *nativeView) routingControlPage() {
 		if shown > 1 {
 			v.pack(list, v.create("separator", props{}))
 		}
-		toggleText := "停用"
+		toggleText, toggleStyle := "停用", "link icon-only icon-check rule-state"
 		if entry.Disabled {
-			toggleText = "启用"
+			toggleText, toggleStyle = "启用", "link icon-only icon-close danger rule-state"
 		}
-		toggle := v.button(toggleText, "link icon-only icon-check", true, readOnly, func() {
+		toggle := v.button(toggleText, toggleStyle, true, readOnly, func() {
 			text := r.Text()
 			if !entry.Disabled {
 				text = routing.DisabledPrefix + text
 			}
 			u.modifyRoutingLine(r.Line, text, false)
 		})
-		if entry.Disabled {
-			toggle.setClasses(toggle.classes + " muted")
-		}
 		move := func(delta int) {
 			other := entries[i+delta].Rule
 			lines := strings.Split(f.Content, "\n")

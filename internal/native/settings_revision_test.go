@@ -158,16 +158,15 @@ func TestNativeWindowSettingsRevision(t *testing.T) {
 	button("立即备份").click()
 	waitJob(t, u)
 	pump()
-	if len(u.state.Backups) != 1 || u.state.Backups[0].Kind != "nodes" || u.notice != "" {
-		t.Fatal("node category backup")
+	if len(u.state.Backups) != 1 || u.notice != "" {
+		t.Fatal("settings backup")
 	}
-	button("DNS设置").click()
-	pump()
+	button("导入备份")
 	button("立即备份").click()
 	waitJob(t, u)
 	pump()
 	if len(u.state.Backups) != 2 {
-		t.Fatal("DNS category backup")
+		t.Fatal("second settings backup")
 	}
 	button("删除备份").click()
 	pump()

@@ -129,6 +129,7 @@ func Run(backend *desktop.App) error {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	u := newUI(backend, requestIdle)
+	u.flagsEnabled = true
 	v, err := newView(u)
 	if err != nil {
 		return err
@@ -357,7 +358,7 @@ func (v *nativeView) refreshLanguage() {
 			w.localizeOptions()
 		}
 	}
-	title := str("Lanboat")
+	title := str(linuxWindowTitle)
 	C.lb_window_title(title)
 	free(title)
 	v.show()
@@ -402,4 +403,10 @@ func (w *widget) setLoading(loading bool) {
 	}
 	w.loading = loading
 	C.lb_loading(w.pointer, flag(loading))
+}
+
+func (v *nativeView) countryIcon(host string) *widget {
+	w := v.dataLabel("", "flag")
+	w.update = func() { w.setText(countryFlag(v.ui.flags[host].code)) }
+	return w
 }

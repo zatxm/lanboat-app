@@ -118,8 +118,8 @@ func TestEmbeddedProxyRequestLogging(t *testing.T) {
 	transport := &http.Transport{Proxy: http.ProxyURL(proxy)}
 	defer transport.CloseIdleConnections()
 	client := &http.Client{Transport: transport, Timeout: 3 * time.Second}
-	for i, full := range []bool{false, true, false} {
-		e.SetRequestLogging(true, full)
+	for i := range 2 {
+		e.SetRequestLogging(true)
 		target := fmt.Sprintf("%s/search?q=core&request=%d", origin.URL, i)
 		req, err := http.NewRequest(http.MethodPost, target, strings.NewReader(strings.Repeat("x", 100000)))
 		if err != nil {
@@ -137,11 +137,7 @@ func TestEmbeddedProxyRequestLogging(t *testing.T) {
 		}
 
 		entry := waitProxyRequestLog(t, store, http.MethodPost, target)
-		if full {
-			if http.Header(entry.Headers).Get("X-Analysis") != "present" || len(entry.Body) != allinone.RequestBodyLogLimit || !entry.BodyTruncated {
-				t.Fatalf("request %d: incomplete full log (headers=%d body=%d truncated=%t)", i, len(entry.Headers), len(entry.Body), entry.BodyTruncated)
-			}
-		} else if len(entry.Headers) != 0 || len(entry.Body) != 0 || entry.BodyTruncated {
+		if len(entry.Headers) != 0 || len(entry.Body) != 0 || entry.BodyTruncated {
 			t.Fatalf("request %d: details recorded while disabled (headers=%d body=%d truncated=%t)", i, len(entry.Headers), len(entry.Body), entry.BodyTruncated)
 		}
 	}
@@ -357,7 +353,6 @@ func TestHTTPSLogDoesNotInventDecryptedRequests(t *testing.T) {
 	c.Settings.Mode = "direct"
 	c.Settings.Port = freePort(t)
 	c.Settings.ProxyLog = true
-	c.Settings.ProxyLogFull = true
 	c.Settings.Proxy.Authentication = true
 	c.Settings.Proxy.Username = "client"
 	c.Settings.Proxy.Password = "proxy-secret"
@@ -438,5 +433,14 @@ func TestEveryProtocolBuildsWithAppDefaults(t *testing.T) {
 				t.Fatalf("%v\n%s", err, raw)
 			}
 		})
+	}
+}
+
+func TestProfileIPRulesKeepProxyHostname(t *testing.T) {
+	// IP predicates are resolved by the core when evaluated. An explicit resolve
+	// action also replaces the destination hostname before it reaches HY2.
+	rules, _ := coreProfileRules(&routing.Parsed{Rules: []routing.Rule{{Type: "IP-CIDR", Value: "192.0.2.0/24", Action: "direct"}}})
+	if len(rules) != 1 || rules[0].(map[string]any)["ip_cidr"] == nil {
+		t.Fatalf("unexpected route actions: %v", rules)
 	}
 }

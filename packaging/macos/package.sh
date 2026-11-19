@@ -3,12 +3,14 @@ set -euo pipefail
 app=build/macos/Lanboat.app
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" dist
 install -m755 build/bin/Lanboat "$app/Contents/MacOS/Lanboat"
+install -m644 packaging/macos/Lanboat.icns "$app/Contents/Resources/"
 cp -R build/notices "$app/Contents/Resources/"
 cat >"$app/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <plist version="1.0"><dict>
 <key>CFBundleIdentifier</key><string>org.lanboat.desktop</string>
 <key>CFBundleName</key><string>Lanboat</string>
+<key>CFBundleIconFile</key><string>Lanboat.icns</string>
 <key>CFBundleExecutable</key><string>Lanboat</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleVersion</key><string>$LANBOAT_VERSION</string>

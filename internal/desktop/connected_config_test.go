@@ -23,6 +23,9 @@ func TestConnectedEditsProtectOnlyActiveNode(t *testing.T) {
 		t.Fatal(err)
 	}
 	before := a.GetStatus()
+	if before.StartedAt <= 0 {
+		t.Fatal("connected session lacks a start time")
+	}
 	n.Name = "blocked"
 	if err := a.SaveNode(n); err == nil {
 		t.Fatal("active edit allowed")
@@ -61,8 +64,8 @@ func TestConnectedEditsProtectOnlyActiveNode(t *testing.T) {
 	if err := a.SaveSettings(s); err != nil {
 		t.Fatal(err)
 	}
-	if !a.GetStatus().Connected {
-		t.Fatal("live port update disconnected")
+	if after := a.GetStatus(); !after.Connected || after.StartedAt != before.StartedAt {
+		t.Fatal("live port update reset the connection timer")
 	}
 	if err := a.SaveRules([]profile.Rule{{Type: "domain", Value: "fixture.invalid", Action: "reject"}}); err != nil {
 		t.Fatal(err)
@@ -70,8 +73,8 @@ func TestConnectedEditsProtectOnlyActiveNode(t *testing.T) {
 	if err := a.SelectNode(other.ID); err != nil {
 		t.Fatal(err)
 	}
-	if a.GetStatus().ActiveNode != other.ID {
-		t.Fatal("node selection did not switch connection")
+	if after := a.GetStatus(); after.ActiveNode != other.ID || after.StartedAt != before.StartedAt {
+		t.Fatal("node selection failed or restarted connection timer")
 	}
 	if err := a.SaveNode(other); err != nil {
 		t.Fatal("unchanged active node rejected", err)
@@ -79,6 +82,12 @@ func TestConnectedEditsProtectOnlyActiveNode(t *testing.T) {
 	n.Name = "now editable"
 	if err := a.SaveNode(n); err != nil {
 		t.Fatal(err)
+	}
+	if err := a.Disconnect(); err != nil {
+		t.Fatal(err)
+	}
+	if after := a.GetStatus(); after.Connected || after.StartedAt != 0 {
+		t.Fatal("disconnect kept a running timer")
 	}
 }
 

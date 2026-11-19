@@ -23,7 +23,8 @@ mkdir -p "$tmp/$name/licenses"
 install -m 644 packaging/COPYING.* "$tmp/$name/licenses/"
 install -m 644 internal/routing/assets/sources.json "$tmp/$name/licenses/routing-data-sources.json"
 cp -R build/notices/modules "$tmp/$name/licenses/"
-tar -czf "dist/$name.tar.gz" -C "$tmp" "$name"
+if [[ ${1:-} != --deb-only ]]; then tar -czf "dist/$name.tar.gz" -C "$tmp" "$name"; fi
+if [[ ${1:-} == --deb-only ]]; then command -v dpkg-deb >/dev/null; fi
 if command -v dpkg-deb >/dev/null; then
   root="$tmp/deb"
   mkdir -p "$root/DEBIAN" "$root/usr/share/lanboat"
@@ -42,6 +43,19 @@ Description: Lanboat lightweight multiprotocol desktop client
  Native Fego desktop client installed in the invoking desktop user's .local.
 EOF
   dpkg-deb --root-owner-group --build "$root" "dist/lanboat_${version}_${arch}.deb"
+fi
+if [[ ${1:-} == --deb-only ]]; then
+  deb="lanboat_${version}_${arch}.deb"
+  digest=$(sha256sum "dist/$deb")
+  for manifest in "dist/$name.sha256" dist/SHA256SUMS; do
+    entry=$deb
+    [[ $manifest != dist/SHA256SUMS ]] || entry="dist/$deb"
+    touch "$manifest"
+    awk -v entry="$entry" '$2 != entry' "$manifest" > "$tmp/manifest"
+    printf '%s  %s\n' "${digest%% *}" "$entry" >> "$tmp/manifest"
+    mv "$tmp/manifest" "$manifest"
+  done
+  exit 0
 fi
 (cd dist; sha256sum "$name.tar.gz" > "$name.sha256"; if [[ -f "lanboat_${version}_${arch}.deb" ]]; then sha256sum "lanboat_${version}_${arch}.deb" >> "$name.sha256"; fi)
 (sed "s#  #  dist/#" "dist/$name.sha256" > dist/SHA256SUMS)

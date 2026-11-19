@@ -76,7 +76,7 @@ func (u *UI) exportData(kind, id string) {
 		return
 	}
 	var saved string
-	u.submit(func() error { var err error; saved, err = u.backend.ExportDataTo(kind, id, directory); return err }, func() { u.notice = fmt.Sprintf("已导出到：%s", saved) })
+	u.submit(func() error { var err error; saved, err = u.backend.ExportDataTo(kind, id, directory); return err }, func() { u.notice = fmt.Sprintf("已导出到：\n%s", saved) })
 }
 
 func (v *nativeView) configPage() {
@@ -151,12 +151,19 @@ func (v *nativeView) configPage() {
 		if f.ID == "default" {
 			edit, icon = "查看", "info"
 		}
-		row := v.box("node-row", true, 8, false, v.box("", false, 5, true, v.dataLabel(f.Name, "node-name node-title"), v.label(info, "help")), v.button("分流控制", "link icon-only icon-route", false, false, func() { u.openRoutingFile(f) }), v.button(edit, "link icon-only icon-"+icon, f.ID != "default", false, func() { u.editConfigFile(f) }), v.button("复制", "link icon-only icon-copy", true, false, func() {
+		rowClass := "node-row routing-file-row"
+		if i == start {
+			rowClass += " routing-file-first"
+		}
+		if i == end-1 {
+			rowClass += " routing-file-last"
+		}
+		row := v.box(rowClass, true, 8, false, v.box("", false, 5, true, v.dataLabel(f.Name, "node-name node-title"), v.label(info, "help")), v.button("分流控制", "link icon-only icon-route", false, false, func() { u.openRoutingFile(f) }), v.button(edit, "link icon-only icon-"+icon, f.ID != "default", false, func() { u.editConfigFile(f) }), v.button("复制", "link icon-only icon-copy", true, false, func() {
 			u.submit(func() error { return u.backend.CopyConfigFile(f.ID) }, func() { u.notice = ""; u.render() })
 		}), v.button("导出", "link icon-only icon-export", false, false, func() { u.exportData("config", f.ID) }))
 		row.text = f.Name
 		row.update = func() {
-			class := "node-row"
+			class := rowClass
 			if f.ID == u.state.Config.ActiveFile {
 				class += " node-selected"
 			}
@@ -178,7 +185,7 @@ func (v *nativeView) configPage() {
 		}
 		v.pack(list, row)
 	}
-	v.listViewport(list)
+	v.pack(v.body, v.box("panel group list-frame routing-file-frame", false, 0, false, list))
 	if pager != nil {
 		v.pack(v.body, pager)
 	}
@@ -209,7 +216,7 @@ func (v *nativeView) dataPage() {
 		return v.box("panel stat", false, 10, true, append([]*widget{header}, values...)...)
 	}
 	cards := []*widget{
-		card("clock", "运行时长", v.uptime),
+		card("clock", "连接时间", v.uptime),
 		card("monitor", "连接", v.connections),
 		card("pie", "总流量", v.totalUp, v.totalDown),
 		card("speed", "速度", v.upload, v.download),
@@ -240,11 +247,8 @@ func (v *nativeView) dataPage() {
 		return v.box("group-row", true, 12, false, text, b)
 	}
 	proxy := toggle("记录代理日志", "每个连接结束时记录目标、匹配规则、出站、耗时和流量；被拒绝或失败的连接立即记录", func() bool { return u.state.Config.Settings.ProxyLog }, func(s *profile.Settings) { s.ProxyLog = !s.ProxyLog })
-	full := toggle("完整请求日志（请求头和正文）", "另记录明文HTTP请求的请求头和正文（最多64KiB）；HTTPS内容无法读取", func() bool { return u.state.Config.Settings.ProxyLogFull }, func(s *profile.Settings) { s.ProxyLogFull = !s.ProxyLogFull })
-	// Full request logging only applies while proxy logging is on.
-	full.update = func() { full.setVisible(u.state.Config.Settings.ProxyLog) }
 	dns := toggle("记录DNS日志", "记录每次DNS查询的域名、类型、结果和耗时", func() bool { return u.state.Config.Settings.DNSLog }, func(s *profile.Settings) { s.DNSLog = !s.DNSLog })
-	v.group("", v.box("group-row", true, 12, false, v.box("", false, 4, true, v.label("自动删除", "node-name"), v.label("超过保留天数的代理、DNS和应用日志会被删除", "help")), retention), v.box("", false, 0, false, proxy, full), dns)
+	v.group("", v.box("group-row", true, 12, false, v.box("", false, 4, true, v.label("自动删除", "node-name"), v.label("超过保留天数的代理、DNS和应用日志会被删除", "help")), retention), proxy, dns)
 }
 func (u *UI) changeSettings(change func(*profile.Settings)) {
 	if u.busy {
@@ -298,7 +302,7 @@ func (v *nativeView) settingsPage() {
 	language.setClasses("compact")
 	theme.setClasses("compact")
 	v.group("", v.box("group-row", true, 28, false,
-		v.box("", true, 10, true, v.icon("globe"), v.label("语言", "node-name"), v.spacer(), language),
+		v.box("", true, 10, true, v.icon("language"), v.label("语言", "node-name"), v.spacer(), language),
 		v.box("", true, 10, true, v.icon("moon"), v.label("主题", "node-name"), v.spacer(), theme)))
 
 	dnsRow := v.settingsRow("DNS设置", "", false, u.openDNS)

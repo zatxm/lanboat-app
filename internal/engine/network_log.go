@@ -15,12 +15,12 @@ import (
 	"go.uber.org/zap"
 )
 
-func (e *Engine) SetRequestLogging(enabled, full bool) {
+func (e *Engine) SetRequestLogging(enabled bool) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	e.configureRequestLog(enabled, full)
+	e.configureRequestLog(enabled)
 }
-func (e *Engine) configureRequestLog(enabled, full bool) {
+func (e *Engine) configureRequestLog(enabled bool) {
 	if e.runtime == nil {
 		return
 	}
@@ -37,8 +37,8 @@ func (e *Engine) configureRequestLog(enabled, full bool) {
 		e.runtime.SetRequestLogger(nil, false)
 	} else {
 		e.runtime.SetRequestLogger(func(q allinone.RequestLog) {
-			queue.push(traffic.Entry{Time: time.Now().Format(time.RFC3339Nano), Kind: "proxy", URL: q.URL, Method: q.Method, Network: "http", Headers: q.Headers, Body: q.Body, BodyTruncated: q.BodyTruncated, Incomplete: q.Incomplete})
-		}, full)
+			queue.push(traffic.Entry{Time: time.Now().Format(time.RFC3339Nano), Kind: "proxy", URL: q.URL, Method: q.Method, Network: "http", Incomplete: q.Incomplete})
+		}, false)
 	}
 	if !queue.store.Enabled("dns") {
 		e.runtime.SetDNSLogger(nil)

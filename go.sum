@@ -1,3 +1,5 @@
+fyne.io/systray v1.12.3-0.20260810170012-af4e8e793ec4 h1:149/+Wa5EsLLXfyj2pdTmvnQf2VIlgCIwSjcCTHYhIo=
+fyne.io/systray v1.12.3-0.20260810170012-af4e8e793ec4/go.mod h1:RVwqP9nYMo7h5zViCBHri2FgjXF7H2cub7MAq4NSoLs=
 github.com/andybalholm/brotli v1.3.0 h1:IdkhjSe/+34U+fP7FSR2Q6Poj1hnHUa2GoWmzXJd6qY=
 github.com/andybalholm/brotli v1.3.0/go.mod h1:rzTDkvFWvIrjDXZHkuS16NPggd91W3kUSvPlQ1pLaKY=
 github.com/ebitengine/purego v0.11.1 h1:2zpWRSQNVKN4eKsKO9eM1ILDgWfYMY9GwqRmK6XeQ/0=
@@ -22,8 +24,6 @@ github.com/stretchr/testify v1.12.1 h1:EuwCh5fleGS7H32xRwO3wRGT7DxrDhLAT6FF8MpWD
 github.com/stretchr/testify v1.12.1/go.mod h1:MDEgiDPPsNp5cuIrHPPCyornHKgEVbtFUmoNlxoYthg=
 github.com/xyproto/randomstring v1.0.5 h1:YtlWPoRdgMu3NZtP45drfy1GKoojuR7hmRcnhZqKjWU=
 github.com/xyproto/randomstring v1.0.5/go.mod h1:rgmS5DeNXLivK7YprL0pY+lTuhNQW3iGxZ18UQApw/E=
-github.com/zatxm/fego v1.0.1 h1:WS4i1fDPd4G/BM0iLBy9n54bGKis6p1c83x0rkbDnPM=
-github.com/zatxm/fego v1.0.1/go.mod h1:DIEhQ18a3eJeM6N/n9o3ec2is+KyIctWhqP5BhRon/Y=
 github.com/zatxm/fego v1.0.2 h1:pWH7UrfC5bNnEjgEMSRrLHgYpPFXF463YwKZna5wI6M=
 github.com/zatxm/fego v1.0.2/go.mod h1:DIEhQ18a3eJeM6N/n9o3ec2is+KyIctWhqP5BhRon/Y=
 github.com/zatxm/lanboat-allinone v1.0.7 h1:vg7eJ38duks8PBtBg706ygF7J0L729u4VUg5pKZiTX4=

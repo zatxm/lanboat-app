@@ -102,7 +102,11 @@ func TestConfigFilesAndBackup(t *testing.T) {
 	if err := a.SaveConfigFile("", "../escape", "[Rule]\nFINAL,PROXY"); err == nil {
 		t.Fatal("unsafe file accepted")
 	}
-	backup, err := a.ExportData("backup", "")
+	record, err := a.CreateBackup()
+	if err != nil {
+		t.Fatal(err)
+	}
+	backup, err := a.ExportBackupTo(record.ID, t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +144,11 @@ func TestBackupOverOneMiB(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	path, err := a.ExportData("backup", "")
+	record, err := a.CreateBackup()
+	if err != nil {
+		t.Fatal(err)
+	}
+	path, err := a.ExportBackupTo(record.ID, t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}

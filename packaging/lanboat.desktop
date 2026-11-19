@@ -5,3 +5,4 @@ Exec=lanboat
 Icon=lanboat
 Categories=Network;
 Terminal=false
+StartupWMClass=lanboat

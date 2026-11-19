@@ -12,6 +12,7 @@ import (
 
 	"github.com/zatxm/lanboat-app/internal/desktop"
 	"github.com/zatxm/lanboat-app/internal/profile"
+	"github.com/zatxm/lanboat-app/internal/ruledata"
 	"github.com/zatxm/lanboat-app/internal/traffic"
 )
 
@@ -40,11 +41,15 @@ type deletion struct {
 	run            func()
 }
 type UI struct {
+	flags                              map[string]flagEntry
+	flagGeneration                     string
+	flagIndex                          ruledata.CountryIndex
+	flagsEnabled, flagsBusy            bool
+	flagHosts                          []string
 	networkQuery                       atomic.Value
 	networkPolling                     atomic.Bool
 	networkPage                        traffic.Page
 	history                            []screen
-	startedAt                          time.Time
 	popup                              *popup
 	expanded                           map[string]bool
 	fileID, detail                     string
@@ -77,7 +82,7 @@ type UI struct {
 }
 
 func newUI(backend *desktop.App, notify func()) *UI {
-	u := &UI{startedAt: time.Now(), backend: backend, page: "home", expanded: map[string]bool{"": true}, fields: map[string]*field{}, delays: map[string]int64{}, updates: make(chan update, 4), done: make(chan struct{}), notify: notify}
+	u := &UI{flags: map[string]flagEntry{}, backend: backend, page: "home", expanded: map[string]bool{"": true}, fields: map[string]*field{}, delays: map[string]int64{}, updates: make(chan update, 4), done: make(chan struct{}), notify: notify}
 	u.networkQuery.Store(logQuery{Kind: "proxy"})
 	u.networkPage.Kind = "proxy"
 	u.state = backend.GetState()
@@ -501,6 +506,9 @@ func (u *UI) saveEditor() {
 		return
 	case "import":
 		content := u.field("content").Text()
+		if u.field("nodeImportMethod").Text() == "file" {
+			content = u.field("nodeImportPath").Text()
+		}
 		fn = func() error { _, err := u.backend.Import(content); return err }
 	case "subscription":
 		name, url := u.field("subName").Text(), u.field("subURL").Text()

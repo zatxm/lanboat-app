@@ -3,33 +3,24 @@ package native
 import (
 	"os"
 	"runtime"
-	"strings"
 	"testing"
 	"time"
-	"unicode"
 
 	"github.com/zatxm/lanboat-app/internal/desktop"
 	"github.com/zatxm/lanboat-app/internal/profile"
 )
 
-func TestBackupOverwriteAndRestoreFlow(t *testing.T) {
+func TestBackupLimitAndRestoreFlow(t *testing.T) {
 	u := testUI(t)
 	for i := 0; i < desktop.MaxBackups; i++ {
-		if _, err := u.backend.CreateBackup("nodes"); err != nil {
+		if _, err := u.backend.CreateBackup(); err != nil {
 			t.Fatal(err)
 		}
 	}
 	u.state = u.backend.GetState()
 	u.createBackup()
-	if u.busy || u.confirm == nil || u.confirm.kind != "backup-overwrite" || !strings.Contains(u.confirm.prompt, "覆盖最早的备份") {
-		t.Fatalf("missing overwrite warning: %+v", u.confirm)
-	}
-	d := u.confirm
-	u.confirm = nil
-	d.run()
-	waitJob(t, u)
-	if u.err != "" || u.notice != "" || len(u.state.Backups) != desktop.MaxBackups {
-		t.Fatalf("overwrite: error=%q notice=%q backups=%d", u.err, u.notice, len(u.state.Backups))
+	if u.busy || u.confirm != nil || len(u.backend.Backups()) != desktop.MaxBackups {
+		t.Fatal("a full backup list accepted another backup")
 	}
 	id := u.state.Backups[0].ID
 	u.restoreBackup(id)
@@ -73,7 +64,7 @@ func TestNativeWindowBackups(t *testing.T) {
 		}
 	}
 	for i := 0; i < desktop.MaxBackups; i++ {
-		if _, err := u.backend.CreateBackup("nodes"); err != nil {
+		if _, err := u.backend.CreateBackup(); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -96,31 +87,14 @@ func TestNativeWindowBackups(t *testing.T) {
 	u.changeSettings(func(s *profile.Settings) { s.Language = "en" })
 	wait()
 	assertEnglishWidgets(t, v)
-	clicked := false
 	for _, c := range v.controls {
-		if strings.HasPrefix(c.widget.text, "立即备份") {
-			clicked = true
-			c.widget.event("push", "")
+		button := c.widget
+		if button.text == "立即备份" {
+			if button.enabled || button.tooltip != backupLimitHint {
+				t.Fatal("full backup list lacks a disabled add button and hint")
+			}
+			return
 		}
 	}
-	pump()
-	if !clicked || u.confirm == nil || u.confirm.kind != "backup-overwrite" {
-		t.Fatalf("missing overwrite warning: %v %+v", clicked, u.confirm)
-	}
-	label := ""
-	for _, c := range v.controls {
-		if c.widget.text == "确认" {
-			label = c.widget.nativeText()
-		}
-	}
-	if label == "" || strings.ContainsFunc(label, func(r rune) bool { return unicode.Is(unicode.Han, r) }) {
-		t.Fatal("untranslated overwrite action", label)
-	}
-	d := u.confirm
-	u.confirm = nil
-	d.run()
-	wait()
-	if len(u.state.Backups) != desktop.MaxBackups || u.notice != "" {
-		t.Fatalf("overwrite kept %d backups", len(u.state.Backups))
-	}
+	t.Fatal("add backup button missing")
 }

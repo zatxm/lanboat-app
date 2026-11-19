@@ -208,7 +208,7 @@ func (e *Engine) StartContext(ctx context.Context, c profile.Config) error {
 	if e.traffic != nil {
 		e.trafficQueue = newTrafficQueue(e.traffic, e.log)
 	}
-	e.configureRequestLog(c.Settings.ProxyLog, c.Settings.ProxyLogFull)
+	e.configureRequestLog(c.Settings.ProxyLog)
 	release()
 	releaseReservations()
 	if err = runtime.Start(); err != nil {

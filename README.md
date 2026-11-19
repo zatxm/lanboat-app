@@ -20,6 +20,8 @@ Download the installer for your operating system and processor from [GitHub Rele
 
 On Linux, open Lanboat from your application menu as your desktop user. Lanboat needs an X11 or XWayland session and the X11 client library (`libX11.so.6`). File dialogs use Zenity. The archive installer expects you to install these dependencies with your distribution's package manager. Run `./uninstall.sh` from the extracted archive to remove that installation.
 
+While Lanboat is running, use its tray icon to show the main window or quit. The icon appears in the Linux desktop panel, Windows notification area, or macOS menu bar. On GNOME, enable the AppIndicator extension if the panel does not show tray icons.
+
 ## Connect
 
 1. On **Home**, select **Import** to paste node links or a subscription URL, or to upload a configuration file. Use **Add** to enter a node manually.
@@ -33,11 +35,11 @@ Use **Latency test** to compare nodes. **Auto** selects the lowest-latency avail
 - In **Settings → Proxy**, you can allow LAN devices to connect, require a username and password, or configure an upstream proxy.
 - Open **Routing rules** in **Settings** to choose a routing configuration, manage custom rules, and adjust the region or update schedule. Subscription rules apply to the nodes from that subscription.
 - Open **DNS settings** to change resolvers, run a query, or open the DNS leak test.
-- In **Data**, turn on proxy or DNS logging and set an automatic cleanup interval. Proxy logs record each connection when it ends, with its destination, matched rule, outbound node, duration, and upload/download traffic; rejected or failed connections are recorded immediately, and plaintext HTTP requests also record the URL and method. Full request logging is off by default. It adds visible HTTP headers and up to 64 KiB of the body, which may contain cookies, tokens, or submitted data. HTTPS remains encrypted, so logs show the connection target for encrypted requests. The **App logs** tab shows Lanboat's own events, such as connecting, disconnecting, updates, and errors.
+- In **Data**, turn on proxy or DNS logging and set an automatic cleanup interval. Proxy logs record each connection when it ends, with its destination, matched rule, outbound node, duration, and upload/download traffic; rejected or failed connections are recorded immediately, and plaintext HTTP requests also record the URL and method. HTTPS remains encrypted, so logs show the connection target for encrypted requests. The **App logs** tab shows Lanboat's own events, such as connecting, disconnecting, updates, and errors.
 
 ## Back up and find your data
 
-Open **Settings → Backups** to save nodes, the active routing rules, or DNS settings separately. Backups may contain proxy credentials.
+Choose **Back up now** in **Settings → Backups** to save the entire app configuration. Lanboat holds up to three backups. Delete one before creating another. Restoring also brings back the proxy mode, LAN sharing and credentials, upstream proxy, TCP/UDP preferences, speed and latency test settings, and logging preferences. When a rule database is installed, the backup includes it in a compressed archive. Use **Download backup** on a saved backup to move it to another computer. On that computer, choose **Import backup** and confirm to replace the current settings. Log history, caches, and live connections are excluded. Use Export nodes on Home to transfer just nodes and subscriptions. Backups may contain proxy credentials. If a node refers to an external certificate by path, copy that file to the corresponding path on the new device.
 
 Use **Settings → About** to open the data folder. The default is `~/.lanboat` on Linux and macOS. Windows uses the folder chosen during installation, defaulting to `%USERPROFILE%\.lanboat`. Uninstalling the app keeps this folder.
 

@@ -11,6 +11,8 @@ import (
 	"github.com/zatxm/lanboat-app/internal/profile"
 )
 
+const linuxWindowTitle = "⛵︎ Lanboat"
+
 var pages = []option{{"home", "首页"}, {"data", "数据"}, {"settings", "设置"}}
 var modes = []option{{"rule", "规则"}, {"global", "全局"}, {"tun", "全局+TUN"}, {"direct", "直连"}}
 
@@ -104,7 +106,7 @@ func (v *nativeView) buildRoot() {
 	v.header = v.box("header", true, 16, false, v.back, v.title, v.spacer(), v.save)
 	v.back.setVisible(false)
 	v.save.setVisible(false)
-	sidebar := v.box("sidebar", false, 10, false, v.box("brand", true, 12, false, v.icon("sail"), v.label("Lanboat", "brand-title")))
+	sidebar := v.box("sidebar", false, 10, false)
 	for _, page := range pages {
 		p := page
 		w := v.create("button", props{text: p.label, classes: "button nav-item icon-" + map[string]string{"home": "home", "config": "folder", "data": "data", "settings": "settings"}[p.value]})
@@ -181,7 +183,7 @@ func (v *nativeView) render() {
 	}
 	v.clear(v.body)
 	v.editorScroll = nil
-	v.body.setExpand(u.editor == "node" || u.editor == "config-file" || u.editor == "config-view" || u.editor == "config-import" || u.editor == "import" || u.detail == "routing-control" || u.detail == "network-logs" || u.detail == "dns-query" || u.detail == "routing-groups" || u.page == "rules" || u.page == "config")
+	v.body.setExpand(u.editor == "node" || u.editor == "config-file" || u.editor == "config-view" || u.editor == "config-import" || u.editor == "import" || u.detail == "routing-control" || u.detail == "network-logs" || u.detail == "dns-query" || u.detail == "routing-groups" || u.page == "rules")
 	v.controls = []control{{v.back, false, false}, {v.save, true, false}}
 	for _, row := range v.bannerRows {
 		for _, w := range v.widgets {
@@ -320,6 +322,15 @@ func (v *nativeView) refresh() {
 			w.setEnabled(false)
 		}
 	}
+	if v.nodeContainer != nil && !u.flagsBusy {
+		var pending []string
+		for _, host := range u.flagHosts {
+			if !u.flags[host].until.After(time.Now()) {
+				pending = append(pending, host)
+			}
+		}
+		u.loadFlags(pending)
+	}
 	if v.power != nil {
 		v.power.setEnabled(!u.busy && (u.status.Connected || u.state.Config.Selected != "" || u.state.Config.Settings.Mode == "direct"))
 		power := "开启连接"
@@ -346,7 +357,10 @@ func (v *nativeView) refresh() {
 		v.totalDown.setText("↓ " + formatBytes(u.status.Download))
 		v.totalUp.setText("↑ " + formatBytes(u.status.Upload))
 		v.connections.setText(strconv.Itoa(u.status.Connections))
-		seconds := int(time.Since(u.startedAt).Seconds())
+		seconds := 0
+		if u.status.Connected && u.status.StartedAt > 0 {
+			seconds = max(0, int(time.Since(time.UnixMilli(u.status.StartedAt))/time.Second))
+		}
 		v.uptime.setText(fmt.Sprintf("%d:%02d:%02d", seconds/3600, seconds/60%60, seconds%60))
 
 	}
@@ -398,10 +412,10 @@ func (v *nativeView) home() {
 			test.setText("延迟测试")
 		}
 	}
-	importButton := v.button("导入", "link home-action", true, false, u.importNodes)
-	addButton := v.button("添加", "primary home-action tight-icon", true, false, func() { u.editNode(profile.Node{Type: "subscribe"}) })
+	importButton := v.button("导入", "link icon-only icon-upload", true, false, u.importNodes)
+	addButton := v.button("添加节点", "link icon-only icon-add", true, false, func() { u.editNode(profile.Node{Type: "subscribe"}) })
 	settings := v.box("", true, 18, false, connection, autoSelect, routing)
-	actions := v.box("", true, 8, false, v.button("测速", "link icon-only icon-speed", false, false, func() { u.openExternal(u.state.Config.Settings.SpeedTarget()) }), test, importButton, addButton)
+	actions := v.box("", true, 8, false, v.button("测速", "link icon-only icon-speed", false, false, func() { u.openExternal(u.state.Config.Settings.SpeedTarget()) }), test, v.button("导出节点", "link icon-only icon-export", false, false, func() { u.exportData("nodes", "") }), importButton, addButton)
 	var nodeToolbar *widget
 	if v.compactWindow() {
 		nodeToolbar = v.box("home-toolbar", false, 8, false, settings, v.box("", true, 0, false, v.spacer(), actions))
@@ -417,6 +431,8 @@ func (v *nativeView) home() {
 	}
 	v.inputs["search"] = search
 	searchField := v.box("search-field", true, 2, false, v.icon("search"), search)
+	searchField.event = func(_, _ string) { search.focus() }
+	v.controls = append(v.controls, control{searchField, false, false})
 	v.nodeContainer = v.box("", false, 18, false)
 	v.pagination = v.box("", true, 6, false)
 	v.pack(v.body, nodeToolbar, searchField, v.nodeContainer, v.pagination)
@@ -447,6 +463,8 @@ func (v *nativeView) renderNodes() {
 	nodes := filterNodes(u.state.Config.Nodes, u.field("search").Text())
 	start, end, page := pageBounds(len(nodes), u.nodePage)
 	u.nodePage = page
+	u.flagHosts = nil
+	hosts := map[string]bool{}
 	sources := map[string]bool{}
 	for _, s := range u.state.Config.Subscriptions {
 		sources[s.ID] = true
@@ -485,7 +503,7 @@ func (v *nativeView) renderNodes() {
 		if g.ID != "" {
 			v.pack(header, v.button("订阅详情", "link icon-only icon-info", false, false, func() { u.openDetail("subscription:" + g.ID) }))
 			v.pack(header, v.button("分享订阅", "link icon-only icon-share", false, false, func() { u.share("subscription", g.ID, g.Name) }))
-			v.pack(header, v.button("删除订阅", "link icon-only icon-delete", true, false, func() { u.confirm = &deletion{kind: "subscription", id: g.ID, name: g.Name}; u.notify() }))
+			v.pack(header, v.button("删除订阅", "link danger icon-only icon-delete", true, false, func() { u.confirm = &deletion{kind: "subscription", id: g.ID, name: g.Name}; u.notify() }))
 		}
 		v.pack(panel, header)
 		if expanded {
@@ -505,7 +523,12 @@ func (v *nativeView) renderNodes() {
 				}
 				delay := v.label(nodeDelayText(u.delays, n.ID), "help node-delay")
 				v.delayLabels[n.ID] = delay
-				row := v.box(class, true, 8, false, v.box("", false, 4, true, v.dataLabel(n.Name, "node-name node-title"), v.dataLabel(nodeDescription(n), "help")), delay, v.button("节点详情", "link icon-only icon-info", false, false, func() { u.editNode(n) }), v.button("分享节点", "link icon-only icon-share", false, false, func() { u.share("node", n.ID, n.Name) }), v.button("删除节点", "link icon-only icon-delete", true, false, func() { u.confirm = &deletion{kind: "node", id: n.ID, name: n.Name}; u.notify() }))
+				if n.Server != "" && !hosts[n.Server] {
+					u.flagHosts = append(u.flagHosts, n.Server)
+					hosts[n.Server] = true
+				}
+				flag := v.countryIcon(n.Server)
+				row := v.box(class, true, 8, false, flag, v.box("", false, 4, true, v.dataLabel(n.Name, "node-name node-title"), v.dataLabel(nodeDescription(n), "help")), delay, v.button("节点详情", "link icon-only icon-info", false, false, func() { u.editNode(n) }), v.button("分享节点", "link icon-only icon-share", false, false, func() { u.share("node", n.ID, n.Name) }), v.button("删除节点", "link danger icon-only icon-delete", true, false, func() { u.confirm = &deletion{kind: "node", id: n.ID, name: n.Name}; u.notify() }))
 				row.update = func() {
 					selected := u.state.Config.Selected
 					if u.status.Connected && u.status.ActiveNode != "" {
@@ -591,7 +614,7 @@ func (v *nativeView) rules() {
 		v.pack(list, row)
 	}
 	if len(u.state.Config.Rules) == 0 {
-		v.pack(list, v.label("暂无分流规则", "empty help"))
+		v.pack(list, v.box("empty", false, 0, false, v.label("暂无分流规则", "help")))
 	}
 	v.listViewport(list)
 	if pager != nil {
@@ -684,7 +707,7 @@ func (v *nativeView) editor() *widget {
 		v.pack(box, v.label("支持多协议纯文本、Clash/JSON 和 Base64 自动解码。下载最长等待 20 秒。", "help"))
 	case "config-file", "config-view":
 		readOnly := u.editor == "config-view"
-		v.pack(box, v.box("field", false, 7, false, v.label("名称", "field-label"), v.input("fileName", "default.conf", false, false, readOnly)))
+		v.pack(box, v.configNameField("default.conf", readOnly))
 		v.pack(box, v.box("field", false, 8, true, v.label("配置内容", "field-label"), v.input("fileContent", "", true, false, readOnly)))
 	case "dns-settings":
 		v.dnsFields(box)
@@ -705,20 +728,15 @@ func (v *nativeView) editor() *widget {
 	if u.editor == "config-file" || u.editor == "config-view" || u.editor == "config-import" || u.editor == "import" || u.editor == "file-rule" || u.editor == "routing-group" || u.editor == "rule" || u.editor == "dns-settings" {
 		return frame
 	}
-	cancel := "取消"
-	buttons := v.box("", true, 8, false)
 	if u.editor != "node" {
-		v.pack(buttons, v.button(cancel, "", false, false, u.back))
-	}
-	if u.editor == "node" && u.draft.ID != "" {
+		v.pack(box, v.box("", true, 8, false, v.button("取消", "", false, false, u.back)))
+	} else if u.draft.ID != "" && u.draft.Type == "subscribe" {
 		id := u.draft.ID
-		if u.draft.Type == "subscribe" {
-			v.pack(buttons, v.button("删除订阅", "danger", true, false, func() { u.confirm = &deletion{kind: "subscription", id: id, name: u.draft.Name}; u.notify() }))
-		} else {
-			v.pack(buttons, v.button("分享", "link", false, false, func() { u.share("node", id, u.draft.Name) }), v.button("删除节点", "danger", true, false, func() { u.confirm = &deletion{kind: "node", id: id, name: u.draft.Name}; u.notify() }))
-		}
+		v.pack(box, v.box("", true, 8, false, v.button("删除订阅", "danger", true, false, func() {
+			u.confirm = &deletion{kind: "subscription", id: id, name: u.draft.Name}
+			u.notify()
+		})))
 	}
-	v.pack(box, buttons)
 	return frame
 }
 

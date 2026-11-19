@@ -310,3 +310,23 @@ func TestImportedCombinedRuleRealRouting(t *testing.T) {
 		t.Fatal(string(data), err)
 	}
 }
+
+func TestImportExportNodeBundle(t *testing.T) {
+	a := seedBackupApp(t)
+	a.config.Subscriptions = []profile.Subscription{{ID: "sub1", Name: "my feed", URL: "https://example.com/feed"}}
+	a.config.Nodes[0].Source = "sub1"
+	a.config.RuleOverlays = []profile.RuleOverlay{{ID: "sub1", Name: "custom", SubscriptionID: "sub1", NodeIDs: []string{a.config.Nodes[0].ID}, Content: "[Rule]\nFINAL,DIRECT"}}
+	path, err := a.ExportDataTo("nodes", "", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := testApp(t)
+	for range 2 {
+		if _, err := b.Import(path); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(b.config.Nodes) != 1 || b.config.Nodes[0].Source != "sub1" || b.config.Subscriptions[0] != a.config.Subscriptions[0] || b.config.Selected != a.config.Selected || len(b.config.RuleOverlays) != 1 || len(b.config.Files) != 1 {
+		t.Fatal("node transfer lost associations or imported global settings")
+	}
+}

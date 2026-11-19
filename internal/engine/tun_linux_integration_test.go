@@ -180,7 +180,6 @@ func runTUNLinuxIntegratedRuntime(t *testing.T, kind string, auth bool) {
 	c.Settings.Mode = "tun"
 	c.Settings.Port = freePort(t)
 	c.Settings.ProxyLog = true
-	c.Settings.ProxyLogFull = true
 	c.Settings.DNSLog = true
 	if auth {
 		c.Settings.Proxy.AllowLAN = true
@@ -227,7 +226,7 @@ func runTUNLinuxIntegratedRuntime(t *testing.T, kind string, auth bool) {
 	for _, entry := range page.Entries {
 		if entry.Method == "POST" {
 			found = true
-			if entry.URL != "http://lanboat-tun.test/complete?via=tun" || !entry.BodyTruncated || entry.Headers["X-Tun-Probe"][0] != "captured" {
+			if entry.URL != "http://lanboat-tun.test/complete?via=tun" || entry.BodyTruncated || len(entry.Body) != 0 || len(entry.Headers) != 0 {
 				t.Fatalf("TUN request log: %+v", entry)
 			}
 		}

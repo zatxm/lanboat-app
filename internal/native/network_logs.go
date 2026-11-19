@@ -1,14 +1,11 @@
 package native
 
 import (
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"github.com/zatxm/lanboat-app/internal/traffic"
 	"strconv"
 	"strings"
 	"time"
-	"unicode/utf8"
 )
 
 type logQuery struct {
@@ -151,7 +148,7 @@ func (v *nativeView) refreshNetworkLogs() {
 		v.pack(v.logContainer, row)
 	}
 	if len(p.Entries) == 0 {
-		v.pack(v.logContainer, v.label("暂无日志", "empty help"))
+		v.pack(v.logContainer, v.box("empty", false, 0, false, v.label("暂无日志", "help")))
 	}
 	v.logPager.setVisible(p.Total > traffic.PageSize)
 	if p.Total <= traffic.PageSize {
@@ -185,7 +182,7 @@ func (v *nativeView) refreshAppLogs() {
 		v.pack(v.logContainer, v.box("node-row", false, 6, false, head, v.dataLabel(e.Message, "log-message")))
 	}
 	if len(logs) == 0 {
-		v.pack(v.logContainer, v.label("暂无日志", "empty help"))
+		v.pack(v.logContainer, v.box("empty", false, 0, false, v.label("暂无日志", "help")))
 	}
 }
 
@@ -201,25 +198,15 @@ func (v *nativeView) networkLogDetail(box *widget, e *traffic.Entry) {
 	if e.Kind == "proxy" {
 		row("请求地址", e.URL)
 		row("请求方法", e.Method)
-		if len(e.Headers) > 0 {
-			raw, _ := json.MarshalIndent(e.Headers, "", "  ")
-			row("请求头", string(raw))
-		}
-		if len(e.Body) > 0 {
-			if utf8.Valid(e.Body) {
-				row("请求内容", string(e.Body))
-			} else {
-				row("请求内容（Base64）", base64.StdEncoding.EncodeToString(e.Body))
-			}
-		}
-		if e.BodyTruncated {
-			row("日志状态", "请求内容仅记录前64KiB，转发内容完整")
-		}
 		if e.Incomplete {
-			row("日志状态", "请求未完整发送")
+			row("日志状态", v.translate("请求未完整发送"))
+		} else if e.Error != "" {
+			row("日志状态", v.translate("连接尝试失败"))
+		} else if e.Method == "" {
+			row("日志状态", v.translate("连接已结束"))
 		}
-		if e.Method == "" || e.Method == "CONNECT" {
-			row("日志状态", "连接元数据：加密流量无法读取完整URL、请求头和正文")
+		if strings.Contains(e.Error, "HY2 connect:") && strings.Contains(e.Error, "tcp6") && strings.Contains(e.Error, "network is unreachable") {
+			row("说明", v.translate("HY2出口无法到达这个IPv6地址。同一网站的其他连接可能已成功。"))
 		}
 		row("传输协议", e.Network)
 		row("匹配规则", e.Rule)

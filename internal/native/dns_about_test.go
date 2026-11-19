@@ -1,6 +1,7 @@
 package native
 
 import (
+	"github.com/zatxm/lanboat-app/internal/appmeta"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -152,7 +153,7 @@ func TestNativeWindowDNSAndAbout(t *testing.T) {
 	if update.enabled {
 		t.Fatal("updater placeholder enabled")
 	}
-	versions := map[string]bool{runtime.Version(): false, toolkitVersion(): false, "Lanboat": false, "1.0.0": false}
+	versions := map[string]bool{runtime.Version(): false, toolkitVersion(): false, appmeta.Name: false, appmeta.Version: false}
 	for _, w := range v.widgets {
 		if _, ok := versions[w.text]; ok {
 			versions[w.text] = true

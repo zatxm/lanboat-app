@@ -4,6 +4,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 arch=${1:?architecture required}
 version=${2:?version required}
+app_version=${3:-$version}
 case "$arch" in
   amd64) machine=x86_64; arch_image=archlinux:base ;;
   arm64) machine=aarch64; arch_image=ghcr.io/menci/archlinuxarm:base ;;
@@ -21,8 +22,8 @@ for target in ubuntu fedora opensuse arch; do
   esac
   echo "Testing $target/$arch installers"
   if docker run --rm -i --platform "linux/$arch" --mount "type=bind,source=$PWD/dist,target=/dist,readonly" \
-    "$image" bash -euo pipefail -s -- "$target" "$arch" "$machine" "$version" <<'CONTAINER'
-target=$1 arch=$2 machine=$3 version=$4
+    "$image" bash -euo pipefail -s -- "$target" "$arch" "$machine" "$version" "$app_version" <<'CONTAINER'
+target=$1 arch=$2 machine=$3 version=$4 app_version=$5
 test "$(uname -m)" = "$machine"
 case "$target" in
   ubuntu)
@@ -32,7 +33,7 @@ case "$target" in
     apt-get install -y --no-install-recommends "/dist/lanboat_${version}_$arch.deb" xvfb xauth x11-utils
     user_home=/home/lanboat
     app="$user_home/.local/bin/lanboat"
-    test "$(runuser -u lanboat -- "$app" --version)" = "$version"
+    test "$(runuser -u lanboat -- "$app" --version)" = "$app_version"
     test -f "$user_home/.local/share/applications/lanboat.desktop"
     runuser -u lanboat -- xvfb-run -a bash -euc '
       export LANBOAT_HOME="$HOME/.lanboat"
@@ -40,7 +41,7 @@ case "$target" in
       pid=$!
       trap "kill $pid 2>/dev/null || true; wait $pid || true" EXIT
       for attempt in {1..100}; do
-        if xwininfo -root -tree | grep -F "\"Lanboat\"" >/dev/null; then exit 0; fi
+        if xwininfo -root -tree | grep -F "(\"lanboat\" \"Lanboat\")" >/dev/null; then exit 0; fi
         kill -0 "$pid" 2>/dev/null || break
         sleep 0.2
       done
@@ -60,7 +61,7 @@ case "$target" in
     for attempt in 1 2; do
       runuser -u lanboat -- env LANBOAT_INSTALL_PREFIX="$prefix" "$work/$name/install.sh"
     done
-    test "$(runuser -u lanboat -- "$prefix/bin/lanboat" --version)" = "$version"
+    test "$(runuser -u lanboat -- "$prefix/bin/lanboat" --version)" = "$app_version"
     runuser -u lanboat -- env LANBOAT_INSTALL_PREFIX="$prefix" "$work/$name/uninstall.sh"
     test ! -e "$prefix/bin/lanboat"
     test -f "$user_home/.lanboat/release-test"
@@ -83,7 +84,7 @@ case "$target" in
     pacman -U "${pacman_options[@]}" "/dist/lanboat-$version-1-$machine.pkg.tar.zst"
     ;;
 esac
-test "$(lanboat --version)" = "$version"
+test "$(lanboat --version)" = "$app_version"
 test -f /usr/share/applications/lanboat.desktop
 for dependency in ip pkexec zenity xdg-open; do
   command -v "$dependency" || { echo "$target/$arch: missing installed command $dependency" >&2; exit 1; }

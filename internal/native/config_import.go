@@ -34,9 +34,15 @@ func (u *UI) previewConfig(input, name string) {
 	})
 }
 
+func (v *nativeView) configNameField(placeholder string, readOnly bool) *widget {
+	name := v.input("fileName", placeholder, false, false, readOnly)
+	name.setExpand(true)
+	return v.box("field", true, 12, false, v.label("名称", "field-label"), name)
+}
+
 func (v *nativeView) configImportFields(box *widget) {
 	u := v.ui
-	v.pack(box, v.field("fileName", "名称", "例如：custom.conf", false))
+	v.pack(box, v.configNameField("例如：custom.conf", false))
 	method := v.selectWidget(u.field("importMethod").Text(), []option{{"manual", "手动输入"}, {"file", "上传文件"}, {"url", "URL"}}, false, func(value string) {
 		u.field("importMethod").SetText(value)
 		u.err = ""

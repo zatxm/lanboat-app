@@ -50,7 +50,6 @@ std::atomic<bool> wake_pending{false};
 bool dark_theme=false;
 Fl_Widget *back_button=nullptr;
 // A persistent, non-interactive leaf keeps FLTK from moving focus to an input.
-Fl_Widget *focus_sink=nullptr;
 bool keyboard_focus=false;
 Fl_Color ink=fl_rgb_color(31,35,41), muted=fl_rgb_color(141,145,153),
     blue=fl_rgb_color(37,116,185), background=FL_WHITE,
@@ -106,7 +105,11 @@ void rounded_edge(int x,int y,int w,int h,int radius,Fl_Color outside,Fl_Color b
 }
 Fl_Color inherited_background(const Fl_Widget *from);
 
-void draw_icon(const std::string &name,int cx,int cy,Fl_Color color) {
+void draw_icon(const std::string &name,int cx,int cy,Fl_Color color,bool enabled=true) {
+    if(name=="delete"){
+        color=dark_theme?fl_rgb_color(236,134,130):fl_rgb_color(187,56,53);
+        if(!enabled)color=fl_color_average(color,background,.6f);
+    }
     fl_color(color);fl_line_style(FL_SOLID,1.6);
     auto l=[&](int x1,int y1,int x2,int y2){fl_line(cx+x1,cy+y1,cx+x2,cy+y2);};
     if(name=="home"){l(-10,0,0,-9);l(0,-9,10,0);l(-7,-1,-7,9);l(-7,9,7,9);l(7,9,7,-1);fl_rect(cx-2,cy+2,5,7);}
@@ -118,14 +121,17 @@ void draw_icon(const std::string &name,int cx,int cy,Fl_Color color) {
     else if(name=="add"){l(0,-8,0,8);l(-8,0,8,0);}
     else if(name=="close"){l(-6,-6,6,6);l(-6,6,6,-6);}
     else if(name=="check"){l(-7,0,-2,5);l(-2,5,8,-6);}
-    else if(name=="import" || name=="export" || name=="download" || name=="upload" || name=="share"){
-        if(name=="upload" || name=="share"){l(0,4,0,-9);l(-4,-5,0,-9);l(0,-9,4,-5);}
+    else if(name=="import" || name=="export" || name=="download" || name=="upload"){
+        if(name=="upload"){l(0,4,0,-9);l(-4,-5,0,-9);l(0,-9,4,-5);}
         else {l(0,-9,0,4);l(-4,0,0,4);l(0,4,4,0);}
         l(-8,3,-8,9);l(-8,9,8,9);l(8,9,8,3);
     }
+    else if(name=="share"){l(-4,-1,3,-5);l(-4,1,3,5);fl_circle(cx-6,cy,2);fl_circle(cx+6,cy-6,2);fl_circle(cx+6,cy+6,2);}
     else if(name=="delete"){l(-9,-5,9,-5);l(-6,-5,-5,9);l(-5,9,5,9);l(5,9,6,-5);l(-3,-8,3,-8);l(-3,-8,-3,-5);l(3,-8,3,-5);l(-2,-1,-2,6);l(2,-1,2,6);}
     else if(name=="edit"){l(-8,4,4,-8);l(4,-8,8,-4);l(8,-4,-4,8);l(-4,8,-8,9);l(-8,9,-8,4);l(1,-5,5,-1);}
     else if(name=="save"){fl_rect(cx-8,cy-9,16,18);fl_rect(cx-4,cy-9,8,6);fl_rect(cx-4,cy+2,8,7);}
+    else if(name=="language"){l(-8,-7,4,-7);l(4,-7,4,2);l(4,2,-3,2);l(-3,2,-7,5);l(-7,5,-7,2);l(-7,2,-8,2);l(-8,2,-8,-7);l(-6,0,-2,-5);l(-2,-5,2,0);l(-4,-2,0,-2);l(7,-2,7,7);l(7,7,2,7);}
+    else if(name=="shield"){l(0,-8,7,-5);l(7,-5,6,2);l(6,2,0,8);l(0,8,-6,2);l(-6,2,-7,-5);l(-7,-5,0,-8);l(-3,0,-1,2);l(-1,2,3,-2);}
     else if(name=="copy"){fl_rect(cx-5,cy-5,13,15);l(-8,6,-10,6);l(-10,6,-10,-10);l(-10,-10,3,-10);l(3,-10,3,-7);}
     else if(name=="refresh"){fl_arc(cx-8,cy-8,16,16,40,310);l(8,-8,8,-2);l(8,-2,2,-2);}
     else if(name=="link"){fl_arc(cx-10,cy-3,12,12,65,285);fl_arc(cx-2,cy-9,12,12,-115,105);l(-4,4,4,-4);}
@@ -175,7 +181,7 @@ class Button : public Fl_Button, public Activity {
 public:
     Style style;std::string classes;
     Button():Fl_Button(0,0,1,1),Activity(this){}
-    int handle(int event) override {if(event==FL_ENTER || event==FL_LEAVE){if(window())window()->cursor(event==FL_ENTER && active_r()?FL_CURSOR_HAND:FL_CURSOR_DEFAULT);redraw();}return Fl_Button::handle(event);}
+    int handle(int event) override {if(event==FL_ENTER || event==FL_LEAVE){if(window())window()->cursor(event==FL_ENTER && active_r()?(has(classes,"search-field")?FL_CURSOR_INSERT:FL_CURSOR_HAND):FL_CURSOR_DEFAULT);redraw();}return Fl_Button::handle(event);}
     void draw() override {
         Style s=style;
         if(s.bg==surface && !has(classes,"primary"))s.bg=inherited_background(parent()->parent());
@@ -183,16 +189,17 @@ public:
         else if(!has(classes,"switch") && (value() || Fl::belowmouse()==this))s.bg=fl_color_average(s.bg,ink,.94f);
         if(!has(classes,"switch"))rectangle(x(),y(),w(),h(),s);
         fl_color(s.fg);fl_font(s.bold?17:16,s.font);
-        if(has(classes,"icon-only")){if(loading)spinner(x()+w()/2,y()+h()/2,blue);else draw_icon(icon_of(classes),x()+w()/2,y()+h()/2,s.fg);}
+        if(has(classes,"icon-only")){if(loading)spinner(x()+w()/2,y()+h()/2,blue);else draw_icon(icon_of(classes),x()+w()/2,y()+h()/2,s.fg,active_r());}
         else if(loading && has(classes,"switch")){spinner(x()+w()/2,y()+h()/2,blue);}
         else if(has(classes,"switch")){bool on=has(classes,"switch-on");int xx=x()+(w()-48)/2,yy=y()+(h()-28)/2;rounded(xx,yy,48,28,14,on?blue:fl_color_average(muted,surface,.45f));fl_color(FL_WHITE);fl_pie(xx+(on?23:3),yy+3,22,22,0,360);}
         else {
             std::string icon=loading?"activity":icon_of(classes),text=label()?label():"";
             bool left=has(classes,"row-button") || has(classes,"nav-item") || has(classes,"header-back") || has(classes,"flush-left");
             int iconWidth=icon.empty()?0:(has(classes,"settings-align")?40:(has(classes,"tight-icon")?22:28));
+            if(!icon.empty() && has(classes,"nav-item"))iconWidth=64;
             int textWidth=int(fl_width(text.c_str()))+iconWidth;
             int xx=has(classes,"header-back")?x()-2:(left?x()+s.pad.left:x()+std::max(has(classes,"home-action")?0:10,(w()-textWidth)/2));
-            if(loading)spinner(xx+10,y()+h()/2,s.fg);else if(!icon.empty())draw_icon(icon,xx+(has(classes,"settings-align")?14:10),y()+h()/2,has(classes,"settings-align")?blue:s.fg);
+            if(loading)spinner(xx+10,y()+h()/2,s.fg);else if(!icon.empty())draw_icon(icon,xx+(has(classes,"settings-align")?14:10),y()+h()/2,has(classes,"settings-align")?blue:s.fg,active_r());
             int tx=xx+iconWidth,tw=std::max(1,w()-(tx-x())-6);
             fl_color(s.fg);fl_font(s.bold?17:16,s.font);
             if(has(classes,"route-option")){
@@ -363,7 +370,7 @@ public:
         while(popup.shown() && this->window()->shown())Fl::wait();
         Fl::grab(nullptr);active_choice_popup=nullptr;active_choice_backdrop=nullptr;Fl::event_dispatch(previous_choice_dispatch);previous_choice_dispatch=nullptr;
         popup.hide();backdrop.hide();
-        if(dialog_window && this->window()==dialog_window){if(dialog_backdrop)dialog_backdrop->show();dialog_window->show();Fl::focus(this);}else Fl::focus(focus_sink);
+        if(dialog_window && this->window()==dialog_window){if(dialog_backdrop)dialog_backdrop->show();dialog_window->show();Fl::focus(this);}else Fl::focus(nullptr);
         keyboard_focus=false;redraw();
         if(popup.selected>=0 && popup.selected!=value()){value(popup.selected);do_callback();}
     }
@@ -453,8 +460,8 @@ struct LBWidget : Fl_Group, Activity {
     LBWidget(const char *k,int i):Fl_Group(0,0,1,1),Activity(this),kind(k),id(i) {end();Fl_Group::current(nullptr);}
     void row_click(){char event[]="click",value[]="";goEvent(id,event,value);}
     int handle(int event) override {
-        if(!has(classes,"node-row"))return Fl_Group::handle(event);
-        if(event==FL_ENTER || event==FL_LEAVE){if(window())window()->cursor(event==FL_ENTER && active_r()?FL_CURSOR_HAND:FL_CURSOR_DEFAULT);}
+        if(!has(classes,"node-row") && !has(classes,"search-field"))return Fl_Group::handle(event);
+        if(event==FL_ENTER || event==FL_LEAVE){if(window())window()->cursor(event==FL_ENTER && active_r()?(has(classes,"search-field")?FL_CURSOR_INSERT:FL_CURSOR_HAND):FL_CURSOR_DEFAULT);}
         if(event==FL_PUSH){
             if(Fl_Group::handle(event))return 1;
             if(Fl::event_button()==FL_LEFT_MOUSE && active_r()){
@@ -482,7 +489,7 @@ struct LBWidget : Fl_Group, Activity {
         if(has(classes,"connectivity-title")){s.font=16;s.bold=true;}
         if(kind=="text")s.minh=190;
         if(kind=="qr"){s.minh=248;s.minw=248;}
-        if(has(classes,"share-link"))s.minh=96;
+        if(has(classes,"share-link")){s.minh=38;s.pad={0,10,0,10};s.fill=true;s.bg=surface;s.radius=8;}
         if(has(classes,"dialog-title")){s.font=19;s.bold=true;}
         if(has(classes,"alert-row")){s.fill=true;s.radius=12;s.pad={4,12,4,14};}
         if(has(classes,"alert-text")){s.font=12;}
@@ -496,8 +503,6 @@ struct LBWidget : Fl_Group, Activity {
         if(has(classes,"search-input")){s.bg=surface;s.fill=s.stroke=false;s.radius=0;s.minh=34;s.minw=140;}
         if(has(classes,"header")){s.fill=true;s.bg=background;s.pad={14,42,14,30};s.minh=74;}
         if(has(classes,"sidebar")){s.fill=true;s.bg=dark_theme?fl_rgb_color(24,25,28):FL_WHITE;s.pad={24,14,24,14};s.minw=200;}
-        if(has(classes,"brand")){s.pad={7,12,30,12};s.minh=87;}
-        if(has(classes,"brand-title")){s.font=21;s.bold=true;}
         if(has(classes,"brand-subtitle")){s.font=10;s.fg=muted;}
         if(has(classes,"sidebar-caption")){s.font=11;s.fg=muted;s.pad={12,10,0,10};}
         if(has(classes,"nav-item")){s.bg=dark_theme?fl_rgb_color(24,25,28):FL_WHITE;s.minh=49;s.minw=172;s.pad={8,12,8,12};s.font=15;}
@@ -526,7 +531,7 @@ struct LBWidget : Fl_Group, Activity {
         if(has(classes,"stat-traffic"))s.font=18;
         if(has(classes,"section-title")){s.font=13;s.fg=muted;s.margin={4,14,0,14};}
         if(has(classes,"help")){s.font=12;s.fg=muted;}
-        if(has(classes,"about-key"))s.minw=90;
+        if(has(classes,"about-key"))s.minw=132;
         if(has(classes,"inline-value")){s.font=12;s.minw=160;}
         if(has(classes,"node-list"))s.pad={0,17,0,17};
         if(has(classes,"node-row")){s.pad={14,18,14,18};s.minh=70;}
@@ -583,7 +588,7 @@ struct LBWidget : Fl_Group, Activity {
         if(kind=="button" && (has(classes,"icon-only") || has(classes,"switch")))return style.minw+style.margin.left+style.margin.right;
         if(kind=="select" && has(classes,"compact")){auto *choice=static_cast<Fl_Choice *>(inner);for(int i=0;i<choice->size()-1;i++)width=std::max(width,int(std::ceil(fl_width(choice->menu()[i].label())))+45);}
         if(kind=="label" && has(classes,"tight-label"))width=int(std::ceil(fl_width(text.c_str())))+6;
-        else if(kind=="label" && (has(classes,"toolbar-label") || has(classes,"brand-title")))width=int(std::ceil(fl_width(text.c_str())))+6;
+        else if(kind=="label" && (has(classes,"toolbar-label")))width=int(std::ceil(fl_width(text.c_str())))+6;
         else if(kind=="label" && (has(classes,"inline-value") || has(classes,"node-delay") || has(classes,"rule-update-summary")))width=style.minw;
         else if(kind=="label" || kind=="button")width=std::max(width,(int)fl_width(text.c_str())+(has(classes,"home-action")?0:18)+style.pad.left+style.pad.right+(icon_of(classes).empty()?0:(has(classes,"tight-icon")?22:28)));
         else if(kind=="box"){
@@ -682,7 +687,7 @@ struct LBWidget : Fl_Group, Activity {
         if(has(classes,"node-row") && keyboard_focus && Fl::focus()==this && active_r()){
             fl_color(blue);fl_line_style(FL_SOLID,1);fl_rect(x()+2,y()+2,w()-4,h()-4);fl_line_style(0);
         }
-        if(kind=="icon")draw_icon(text,x()+w()/2,y()+h()/2,has(classes,"stat-icon")?muted:blue);
+        if(kind=="icon")draw_icon(text,x()+w()/2,y()+h()/2,has(classes,"stat-icon")?muted:blue,active_r());
         if(kind=="qr"){
             int size=0;for(char c:text){if(c=='\n')break;size++;}
             if(size>0){int scale=std::max(1,std::min(w(),h())/size),edge=scale*size;
@@ -757,7 +762,7 @@ class MainWindow : public Fl_Double_Window {
 public:
     int handle(int e) override {
  // Restoring the owner window after a popup must not pick its first input.
- if(e==FL_FOCUS){if(!contains(Fl::focus()))Fl::focus(focus_sink?focus_sink:this);return 1;}
+ if(e==FL_FOCUS){if(!contains(Fl::focus()))Fl::focus(this);return 1;}
  if(e==FL_KEYDOWN){if(Fl::event_key()==FL_F+11){if(fullscreen_active())fullscreen_off();else fullscreen();return 1;}
  if(Fl::event_key()==FL_Escape){if(fullscreen_active())fullscreen_off();else if(back_button && back_button->visible_r() && back_button->active_r())back_button->do_callback();return 1;}keyboard_focus=true;}
  else if(e==FL_PUSH){
@@ -845,7 +850,6 @@ LBWidget *lb_create(const char *kind,int id,const char *text,const char *value,c
     else if(n->kind=="scroll"){n->inner=new Scroll();}
     n->end();Fl_Group::current(nullptr);
     if(n->inner){if(n->kind=="label" || n->kind=="button")n->inner->copy_label(text);n->inner->callback(event_cb,n);if(has(n->classes,"icon-only"))n->inner->copy_tooltip(text);if(n->kind=="entry" || n->kind=="text")n->inner->when(FL_WHEN_CHANGED);}
-    if(has(n->classes,"brand-title"))focus_sink=n->inner;
     if(has(n->classes,"header-back")){back_button=n->inner;static_cast<Fl_Button *>(n->inner)->shortcut(FL_ALT+FL_Left);}
     n->theme();if(disabled)n->deactivate();return n;
 }
@@ -885,13 +889,13 @@ void lb_fit_dialog(void){
  if(dialog_backdrop)dialog_backdrop->show();dialog_window->show();
  layout_dirty=true;
 }
-void lb_close_dialog(void){if(dialog_window){dialog_window->hide();Fl::delete_widget(dialog_window);}dialog_window=nullptr;dialog_root=nullptr;if(dialog_backdrop){dialog_backdrop->hide();Fl::delete_widget(dialog_backdrop);dialog_backdrop=nullptr;}Fl::focus(focus_sink);keyboard_focus=false;}
+void lb_close_dialog(void){if(dialog_window){dialog_window->hide();Fl::delete_widget(dialog_window);}dialog_window=nullptr;dialog_root=nullptr;if(dialog_backdrop){dialog_backdrop->hide();Fl::delete_widget(dialog_backdrop);dialog_backdrop=nullptr;}Fl::focus(nullptr);keyboard_focus=false;}
 void lb_copy(const char *text){Fl::copy(text,std::strlen(text),1);}
-void lb_blur(void){keyboard_focus=false;Fl::focus(focus_sink);}
+void lb_blur(void){keyboard_focus=false;Fl::focus(nullptr);}
 void lb_theme(int dark){dark_theme=dark;ink=dark?fl_rgb_color(229,231,235):fl_rgb_color(31,35,41);muted=dark?fl_rgb_color(151,156,167):fl_rgb_color(115,122,135);blue=dark?fl_rgb_color(184,198,218):fl_rgb_color(75,102,146);background=dark?fl_rgb_color(20,21,24):FL_WHITE;surface=dark?fl_rgb_color(29,30,34):FL_WHITE;line=dark?fl_rgb_color(44,46,52):fl_rgb_color(227,230,235);if(root){auto theme=[](auto&&self,LBWidget *n)->void{n->theme();for(auto*c:n->nodes)self(self,c);};theme(theme,root);if(dialog_root)theme(theme,dialog_root);}if(dialog_window){dialog_window->color(background);dialog_window->redraw();}if(window){window->color(background);window->redraw();}}
 void lb_pack(LBWidget *p,LBWidget *c){p->nodes.push_back(c);c->logical_parent=p;if(p->kind=="scroll")static_cast<Fl_Scroll *>(p->inner)->add(c);else p->add(c);layout_dirty=true;}
 void lb_clear(LBWidget *p){for(auto *n:p->nodes)delete n;p->nodes.clear();layout_dirty=true;}
-void lb_close(void){lb_close_dialog();Fl::remove_check(layout_now);if(window)delete window;clean_popup_shapes();window=nullptr;root=nullptr;back_button=nullptr;focus_sink=nullptr;layout_dirty=false;}
+void lb_close(void){lb_close_dialog();Fl::remove_check(layout_now);if(window)delete window;clean_popup_shapes();window=nullptr;root=nullptr;back_button=nullptr;layout_dirty=false;}
 void lb_show(void){layout_dirty=true;layout_now(nullptr);window->show();}
 int lb_run(void){return Fl::run();}
 void lb_awake(void){if(!wake_pending.exchange(true))Fl::awake(awake_cb,nullptr);}
@@ -900,7 +904,7 @@ void lb_text(LBWidget *n,const char *text){n->text=text;if(n->inner)n->inner->co
 void lb_classes(LBWidget *n,const char *classes){n->classes=classes;n->theme();n->redraw();}
 void lb_tooltip(LBWidget *n,const char *text){if(n && n->inner)n->inner->copy_tooltip(text);}
 void lb_loading(LBWidget *n,int loading){if(n->inner){if(auto*a=dynamic_cast<Activity*>(n->inner))a->set_loading(loading);}else n->set_loading(loading);}
-void lb_enabled(LBWidget *n,int enabled){if((bool)n->active()==(bool)enabled)return;if(enabled)n->activate();else {if(n->contains(Fl::focus()))Fl::focus(focus_sink);n->deactivate();}if(n->window())n->window()->redraw();else n->redraw();}
+void lb_enabled(LBWidget *n,int enabled){if((bool)n->active()==(bool)enabled)return;if(enabled)n->activate();else {if(n->contains(Fl::focus()))Fl::focus(nullptr);n->deactivate();}if(n->window())n->window()->redraw();else n->redraw();}
 void lb_visible(LBWidget *n,int show){if((bool)n->visible()==(bool)show)return;if(show)n->show();else n->hide();layout_dirty=true;}
 void lb_expand(LBWidget *n,int expand){n->expand=expand;layout_dirty=true;}
 void lb_options(LBWidget *n,const char *options,const char *value){auto *c=static_cast<Fl_Choice *>(n->inner);c->clear();n->option_ids.clear();std::string lines(options);size_t start=0;

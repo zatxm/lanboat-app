@@ -81,13 +81,18 @@ func TestFegoHomeUsesViewport(t *testing.T) {
 				first.Y <= search.Y || second.Y <= first.Y || second.Y+second.H > scroll.H {
 				t.Fatalf("content does not use the viewport: scroll=%v search=%v first=%v second=%v", scroll, search, first, second)
 			}
+			var add *widget
 			for _, w := range v.widgets {
-				if w.kind == "button" && w.text == "添加" {
-					b := w.pointer.Bounds()
-					if b.X+b.W > float32(size[0])-16 {
-						t.Fatal("Add button extends beyond the content", b)
-					}
+				if w.kind == "button" && w.text == "添加节点" {
+					add = w
+					break
 				}
+			}
+			if add == nil || add.buttonCaption != nil || add.icon != "add" {
+				t.Fatal("expected icon-only Add node control")
+			}
+			if b := add.pointer.Bounds(); b.X+b.W > float32(size[0])-16 {
+				t.Fatal("Add button extends beyond the content", b)
 			}
 			v.tester.Send(fego.Event{Kind: fego.Scroll, X: scroll.X + 20, Y: scroll.H / 2, DY: 240})
 			if v.delayLabels["node-0"].pointer.Bounds().Y >= first.Y {

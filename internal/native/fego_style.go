@@ -5,6 +5,7 @@ package native
 import (
 	"math"
 	"strings"
+	"time"
 
 	"github.com/zatxm/fego/ui"
 )
@@ -68,8 +69,6 @@ func (w *widget) style() {
 		e.AlignItems(ui.Stretch)
 	case is("sidebar"):
 		e.Width(200).Padding(24, 14).Background(t.Background)
-	case is("brand"):
-		e.Padding(8, 12, 27, 12).MinHeight(81)
 	case is("main"):
 		e.Padding(20, 32, 28, 30)
 	case is("header"):
@@ -79,7 +78,7 @@ func (w *widget) style() {
 		if is("active") {
 			bg, fg = t.Raised, t.Accent
 		}
-		e.Height(46).Padding(0, 12).Radius(8).Background(bg)
+		e.Height(46).Padding(0, 12).Gap(45).Radius(8).Background(bg)
 		w.buttonCaption.FontSize(15).TextColor(fg)
 		w.iconColor = fg
 	case is("panel") || is("option-group") || is("dialog-surface"):
@@ -93,27 +92,30 @@ func (w *widget) style() {
 		if is("node-editor") {
 			e.Padding(18, 6, 18, 18)
 		}
+	case is("about-key"):
+		e.Width(132)
 	case is("editor-content"):
 		e.Padding(0, 14, 0, 0)
 	case is("group-row"):
 		e.MinHeight(62).Padding(9, 16).Clip()
+	case is("routing-file-row"):
+		e.Refresh()
 	case is("node-row"):
 		e.MinHeight(64).Padding(11, 16).Radius(0).Clip()
 		bg := ui.Color{}
 		if is("node-selected") {
-			bg = ui.RGB(243, 247, 253)
-			if w.view.theme == "dark" {
-				bg = t.Raised
-			}
+			bg = w.selectedRowColor()
 			if is("node-last") {
 				e.Radius(15)
 			}
 		}
 		e.Background(bg)
 	case is("search-field"):
-		e.Height(43).Padding(3, 11).Radius(9).Background(t.Surface).Border(t.Border)
-	case is("search-input"):
-		e.Height(35).Radius(5).Border(t.Surface)
+		e.Height(43).Padding(1, 9, 1, 10).Radius(9).Background(t.Surface).Border(t.Border)
+	case is("share-link"):
+		e.Height(38).Padding(0, 10).Radius(8).Background(t.Raised).Clip()
+	case is("share-link-preview"):
+		e.FontSize(13).Clip()
 	case is("alert-row"):
 		e.Background(t.Raised).Radius(9).Padding(4, 12)
 	case is("empty"):
@@ -121,7 +123,7 @@ func (w *widget) style() {
 	}
 
 	switch {
-	case is("toolbar-title") || is("brand-title"):
+	case is("toolbar-title"):
 		e.FontSize(21).Bold()
 	case is("connection-title"):
 		e.FontSize(18).Bold().TextColor(t.Text)
@@ -173,7 +175,14 @@ func (w *widget) style() {
 	switch {
 	case is("icon-only"):
 		e.Size(34, 34).Justify(ui.Center)
-		if !w.enabled {
+		switch {
+		case is("primary"):
+			e.Background(t.Accent).Radius(8)
+			w.iconColor = t.AccentText
+		case is("danger"):
+			w.iconColor = t.Danger
+		}
+		if !w.enabled && !w.loading && !is("rule-state") {
 			w.iconColor = t.Muted
 		}
 	case lineButton(w.classes) && !usesLineButton(w.classes):
@@ -191,12 +200,15 @@ func (w *widget) style() {
 		case is("secondary"):
 			bg = t.Raised
 		}
-		if !w.enabled {
+		if !w.enabled && !w.loading {
 			fg = t.Muted
 		}
 		e.Height(38).Padding(0, 13).Radius(8).Background(bg).Border(border)
 		if is("link") {
 			e.Padding(0, 6)
+		}
+		if is("flush-left") {
+			e.Padding(0)
 		}
 		w.iconColor = fg
 		w.buttonCaption.FontSize(14).Bold().TextColor(fg)
@@ -218,13 +230,19 @@ func (w *widget) style() {
 		if is("row-button") {
 			fg = t.Text
 		}
-		if !w.enabled {
+		if !w.enabled && !w.loading {
 			fg, w.iconColor = t.Muted, t.Muted
 		}
 		w.buttonCaption.FontSize(14).TextColor(fg)
 		if w.buttonValue != nil {
 			w.buttonValue.FontSize(13).TextColor(t.Muted)
 		}
+	case is("backup-tab"):
+		bg, border, fg := t.Surface, t.Border, t.Text
+		if is("active") {
+			bg, border, fg = t.Raised, t.Accent, t.Accent
+		}
+		e.Radius(8).Background(bg).Border(border).TextColor(fg)
 	default:
 		e.Radius(8)
 		if is("primary") {
@@ -242,8 +260,47 @@ func (w *widget) style() {
 	}
 }
 
+const routingFileRowHeight = 64
+
+func (w *widget) selectedRowColor() ui.Color {
+	if w.view.theme == "dark" {
+		return lanboatTheme("dark").Raised
+	}
+	return ui.RGB(243, 247, 253)
+}
+
+func (w *widget) paintRoutingFileSelection(p *ui.Painter) {
+	if !hasClass(w.classes, "node-selected") {
+		return
+	}
+	bounds := p.Bounds()
+	first := hasClass(w.classes, "routing-file-first")
+	last := hasClass(w.classes, "routing-file-last")
+	fill := w.selectedRowColor()
+	if !first && !last {
+		p.Rect(bounds, fill)
+		return
+	}
+	// Match the inside of the frame. Corners beyond the canvas clip stay square.
+	const radius = 15
+	if !first {
+		bounds.Y -= radius
+		bounds.H += radius
+	}
+	if !last {
+		bounds.H += radius
+	}
+	p.RoundRect(bounds, radius, fill)
+}
+
 func (w *widget) lineIcon(size float32) *ui.Element {
-	return ui.Canvas(size, size, func(p *ui.Painter) { w.paintLineIcon(p, w.icon) })
+	return ui.Canvas(size, size, func(p *ui.Painter) {
+		icon := w.icon
+		if w.loading {
+			icon = "activity"
+		}
+		w.paintLineIcon(p, icon)
+	})
 }
 
 func (w *widget) paintLineIcon(p *ui.Painter, icon string) {
@@ -269,6 +326,9 @@ func (w *widget) paintLineIcon(p *ui.Painter, icon string) {
 	}
 	ring := func(cx, cy, r float32) { arc(cx, cy, r, 0, 2*math.Pi) }
 	switch icon {
+	case "activity":
+		start := float32(time.Now().UnixMilli()%780) * (2 * math.Pi / 780)
+		arc(0, 0, 6, start, start+1.5*math.Pi)
 	case "sail":
 		path(pair(-7, 6), pair(-4, 8), pair(5, 8), pair(8, 5), pair(-8, 5))
 		path(pair(-1, -7), pair(-6, 2), pair(-1, 2), pair(-1, -7))
@@ -298,6 +358,10 @@ func (w *widget) paintLineIcon(p *ui.Painter, icon string) {
 		line(0, -1, 0, 4)
 		p.Circle(x, y-4, 0.8, c)
 	case "delete":
+		c = lanboatTheme(w.view.theme).Danger
+		if !w.enabled {
+			c.A = 153
+		}
 		line(-7, -4, 7, -4)
 		path(pair(-5, -4), pair(-4, 7), pair(4, 7), pair(5, -4))
 		path(pair(-3, -4), pair(-3, -7), pair(3, -7), pair(3, -4))
@@ -311,9 +375,15 @@ func (w *widget) paintLineIcon(p *ui.Painter, icon string) {
 	case "refresh":
 		arc(0, 0, 6, -.5, 5.05)
 		path(pair(6, -7), pair(6, -2), pair(1, -2))
-	case "import", "export", "download", "upload", "share", "up", "down":
+	case "share":
+		line(-4, -1.5, 3.5, -5.5)
+		line(-4, 1.5, 3.5, 5.5)
+		ring(-6, 0, 2.2)
+		ring(6, -6, 2.2)
+		ring(6, 6, 2.2)
+	case "import", "export", "download", "upload", "up", "down":
 		dir := float32(1)
-		if icon == "upload" || icon == "share" || icon == "up" {
+		if icon == "upload" || icon == "up" {
 			dir = -1
 		}
 		if icon != "up" && icon != "down" {
@@ -354,6 +424,14 @@ func (w *widget) paintLineIcon(p *ui.Painter, icon string) {
 		ring(0, 0, 7)
 		line(-6, 0, 6, 0)
 		arc(0, 0, 6, -1.6, 1.6)
+	case "language":
+		path(pair(-8, -7), pair(4, -7), pair(4, 2), pair(-3, 2), pair(-7, 5), pair(-7, 2), pair(-8, 2), pair(-8, -7))
+		path(pair(-6, 0), pair(-2, -5), pair(2, 0))
+		line(-4, -1.5, 0, -1.5)
+		path(pair(6, -3), pair(8, -3), pair(8, 7), pair(5, 7), pair(3, 5), pair(1, 5))
+	case "shield":
+		path(pair(0, -8), pair(7, -5), pair(6, 2), pair(4, 5), pair(0, 8), pair(-4, 5), pair(-6, 2), pair(-7, -5), pair(0, -8))
+		path(pair(-3, 0), pair(-1, 2), pair(3, -2))
 	case "pie":
 		arc(0, 0, 7, 0, 1.5*math.Pi)
 		path(pair(0, -7), pair(0, 0), pair(7, 0))

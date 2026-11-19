@@ -3,12 +3,16 @@
 package native
 
 import (
+	"fmt"
 	"image"
 	"image/color"
+	"os"
 	"os/exec"
 	"runtime"
 	"slices"
 	"strings"
+	"sync/atomic"
+	"time"
 
 	"github.com/zatxm/fego"
 	"github.com/zatxm/fego/ui"
@@ -24,6 +28,8 @@ type props struct {
 }
 type widget struct {
 	pointer                     *ui.Element
+	activityIcon                *ui.Element
+	activityFramePending        bool
 	buttonCaption               *ui.Element
 	buttonValue                 *ui.Element
 	icon                        string
@@ -46,7 +52,13 @@ type control struct {
 	widget           *widget
 	config, disabled bool
 }
+type systemTray struct {
+	relabel func(string, string)
+	close   func()
+}
+
 type nativeView struct {
+	tray                                                *systemTray
 	theme                                               string
 	language                                            string
 	window                                              *fego.Window
@@ -98,6 +110,7 @@ func newView(u *UI) (*nativeView, error) {
 func attachWindow(v *nativeView) { v.doc = ui.View(v.shell.pointer.Fill()) }
 func Run(backend *desktop.App) error {
 	u := newUI(backend, requestIdle)
+	u.flagsEnabled = true
 	v, err := newView(u)
 	if err != nil {
 		return err
@@ -106,11 +119,19 @@ func Run(backend *desktop.App) error {
 	defer func() { close(u.done); active = nil; v.dispose() }()
 	var openErr error
 	fego.App.WhenReady(func() {
-		v.window, openErr = fego.App.NewWindow(fego.WindowOptions{Title: "Lanboat", Width: 1160, Height: 800, Content: display{v}})
+		title := fmt.Sprintf("Lanboat (%d)", os.Getpid())
+		v.window, openErr = fego.App.NewWindow(fego.WindowOptions{Title: title, Width: 1160, Height: 800, Content: display{v}})
 		if openErr != nil {
 			return
 		}
+		showWindow := installWindowIcon(title)
+		title = "Lanboat"
+		if runtime.GOOS == "linux" {
+			title = linuxWindowTitle
+		}
+		v.window.SetTitle(title)
 		v.render()
+		v.tray = startSystemTray(v.translate("显示主窗口"), v.translate("退出"), showWindow)
 		go u.poll()
 		go u.backend.RunRuleUpdates(u.done)
 	})
@@ -120,7 +141,14 @@ func Run(backend *desktop.App) error {
 	}
 	return err
 }
-func requestIdle() { fego.App.Post(pump) }
+
+var idleQueued atomic.Bool
+
+func requestIdle() {
+	if idleQueued.CompareAndSwap(false, true) {
+		fego.App.Post(func() { idleQueued.Store(false); pump() })
+	}
+}
 func pump() {
 	if active != nil {
 		active.ui.drain()
@@ -153,7 +181,11 @@ func (w *widget) dispatch(event, value string) {
 	v.ui.actionID = w.id
 	w.event(event, value)
 	v.ui.actionID = last
-	v.flush()
+	if v.tester != nil {
+		v.flush()
+	} else {
+		requestIdle()
+	}
 }
 func (v *nativeView) create(kind string, p props) *widget {
 	v.next++
@@ -166,6 +198,13 @@ func (v *nativeView) create(kind string, p props) *widget {
 			w.pointer = ui.Column()
 		}
 		w.pointer.Gap(float32(p.gap))
+		if hasClass(p.classes, "routing-file-row") {
+			w.activityIcon = w.lineIcon(18).Hidden(true)
+			w.content = w.pointer.Height(routingFileRowHeight).Padding(11, 16).Clip().Append(w.activityIcon)
+			background := ui.Canvas(1, routingFileRowHeight, w.paintRoutingFileSelection)
+			// Keep the selection canvas behind the row without affecting the row height.
+			w.pointer = ui.Column(background, w.content).Gap(-routingFileRowHeight)
+		}
 	case "scroll":
 		w.content = ui.Column().Gap(0)
 		w.pointer = ui.ScrollView(w.content)
@@ -184,6 +223,13 @@ func (v *nativeView) create(kind string, p props) *widget {
 				w.pointer = ui.TextInput(p.value)
 			}
 			w.pointer.Password(p.secret).Placeholder(v.translate(p.placeholder)).OnChange(func(val string) { w.value = val; w.dispatch("change", val) })
+			if hasClass(p.classes, "search-input") {
+				// Clip the input's built-in outline and let the single outer field
+				// outline enclose both the magnifier and editable text.
+				// Fego positions single-line text 10px from the input's top.
+				w.content = w.pointer.Height(35).Radius(0).Label(v.translate("搜索节点"))
+				w.pointer = ui.Box(w.content).Padding(-1).Clip()
+			}
 		}
 	case "select":
 		w.pointer = ui.Box().Gap(0)
@@ -196,7 +242,8 @@ func (v *nativeView) create(kind string, p props) *widget {
 		if strings.Contains(p.classes, "switch") {
 			w.pointer = ui.Switch("", false).OnToggle(func(bool) { w.dispatch("click", "") })
 		} else if lineButton(p.classes) {
-			w.pointer = ui.Row(w.lineIcon(18)).Gap(7).Clip().OnClick(func() { w.dispatch("click", "") })
+			w.activityIcon = w.lineIcon(18)
+			w.pointer = ui.Row(w.activityIcon).Gap(7).Clip().OnClick(func() { w.dispatch("click", "") })
 			if !hasClass(p.classes, "icon-only") {
 				w.buttonCaption = ui.Text("").Clip()
 				w.pointer.Append(w.buttonCaption)
@@ -263,6 +310,9 @@ func (v *nativeView) clear(parent *widget) {
 }
 
 func (v *nativeView) dispose() {
+	if v.tray != nil {
+		v.tray.close()
+	}
 	if v.tester != nil {
 		v.tester.Close()
 	}
@@ -304,9 +354,6 @@ func (w *widget) localize() {
 		icon := buttonIcon(w.classes)
 		if lineButton(w.classes) {
 			w.icon = icon
-			if w.loading {
-				w.icon = "refresh"
-			}
 			if w.buttonValue != nil {
 				title, value, _ := strings.Cut(w.text, "\t")
 				w.buttonCaption.SetText(w.view.translate(title))
@@ -352,7 +399,7 @@ func (w *widget) setText(s string) {
 				}
 			}
 		}
-		w.pointer.Children(ui.Image(img).Width(224).Height(224))
+		w.pointer.Children(ui.Image(img).Width(200).Height(200))
 		return
 	}
 	w.localize()
@@ -425,6 +472,9 @@ func (v *nativeView) refreshLanguage() {
 		return
 	}
 	v.language = lang
+	if v.tray != nil {
+		v.tray.relabel(v.translate("显示主窗口"), v.translate("退出"))
+	}
 	for _, w := range v.widgets {
 		w.localize()
 		if w.tooltip != "" && w.kind != "button" {
@@ -436,14 +486,44 @@ func (v *nativeView) refreshLanguage() {
 		if w.options != nil {
 			w.localizeOptions()
 		}
+		if hasClass(w.classes, "search-input") {
+			w.content.Label(v.translate("搜索节点"))
+		}
 	}
 }
 func (w *widget) setLoading(b bool) {
-	if w.loading != b {
-		w.loading = b
-		w.localize()
+	if w.loading == b {
+		return
+	}
+	w.loading = b
+	w.localize()
+	if w.activityIcon != nil {
+		if w.kind == "box" {
+			w.activityIcon.Hidden(!b)
+		}
+		w.activityIcon.Refresh()
+		w.scheduleActivityFrame()
 	}
 }
+
+func (w *widget) scheduleActivityFrame() {
+	v := w.view
+	if !w.loading || v.window == nil || w.activityFramePending {
+		return
+	}
+	w.activityFramePending = true
+	time.AfterFunc(65*time.Millisecond, func() {
+		fego.App.Post(func() {
+			w.activityFramePending = false
+			if active != v || !w.loading || v.widgets[w.id] != w {
+				return
+			}
+			w.activityIcon.Refresh()
+			w.scheduleActivityFrame()
+		})
+	})
+}
+
 func (w *widget) nativeText() string {
 	if w.buttonCaption != nil {
 		return w.buttonCaption.Text()
@@ -524,6 +604,9 @@ func (d display) Mount(h fego.Host) fego.View {
 }
 func (v *nativeView) compactWindow() bool { return v.compact }
 
+// Forward Fego’s optional retained repaint hook through the event adapter.
+func (d eventView) PaintIfDirty() { d.View.(interface{ PaintIfDirty() }).PaintIfDirty() }
+
 func (d eventView) Event(e fego.Event) {
 	if e.Kind == fego.Resize && e.Width > 0 {
 		v := d.v
@@ -552,8 +635,15 @@ func (v *nativeView) send(e fego.Event) {
 }
 func (w *widget) focus() {
 	r := w.pointer.Bounds()
-	w.view.send(fego.Event{Kind: fego.PointerDown, X: r.X + 2, Y: r.Y + 2, Button: 1})
-	w.view.send(fego.Event{Kind: fego.PointerUp, X: r.X + 2, Y: r.Y + 2, Button: 1})
+	scale := float32(1)
+	if w.view.tester != nil {
+		scale = w.view.tester.Scale
+	} else if w.view.window != nil {
+		_, _, scale = w.view.window.Size()
+	}
+	x, y := (r.X+2)*scale, (r.Y+r.H/2)*scale
+	w.view.send(fego.Event{Kind: fego.PointerDown, X: x, Y: y, Button: 1})
+	w.view.send(fego.Event{Kind: fego.PointerUp, X: x, Y: y, Button: 1})
 }
 func blurFocus() {
 	if active != nil {

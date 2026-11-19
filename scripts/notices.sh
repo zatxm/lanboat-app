@@ -7,6 +7,6 @@ modules=$(GOWORK=off go list -deps -f '{{with .Module}}{{.Path}} {{.Dir}}{{end}}
 while read -r name path; do
   [[ -n "$path" ]] || continue
   for file in LICENSE LICENSE.txt LICENSE.md COPYING; do
-    if [[ -f "$path/$file" ]]; then cp "$path/$file" "$dir/modules/${name//\//_}.txt"; break; fi
+    if [[ -f "$path/$file" ]]; then install -m 644 "$path/$file" "$dir/modules/${name//\//_}.txt"; break; fi
   done
 done <<< "$modules"

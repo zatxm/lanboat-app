@@ -53,17 +53,10 @@ func TestNativeWindowNetworkDataAndDNSQuery(t *testing.T) {
 	if !u.state.Config.Settings.ProxyLog || !u.state.Config.Settings.DNSLog {
 		t.Fatal("recording switches")
 	}
-	find("完整请求日志（请求头和正文）").click()
-	waitJob(t, u)
-	pump()
-	if !u.state.Config.Settings.ProxyLogFull {
-		t.Fatal("full request logging switch was not persisted")
-	}
-	find("完整请求日志（请求头和正文）").click()
-	waitJob(t, u)
-	pump()
-	if u.state.Config.Settings.ProxyLogFull {
-		t.Fatal("full request logging switch was not disabled")
+	for _, c := range v.controls {
+		if strings.HasPrefix(c.widget.text, "完整请求日志") {
+			t.Fatal("obsolete log setting")
+		}
 	}
 	// Disk fixtures ensure the UI can reach records older than the previous 200-entry ring.
 	dir := filepath.Join(u.state.DataDir, "logs")

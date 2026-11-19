@@ -34,8 +34,8 @@ func openRoutingBackup(name string) (*os.File, *gzip.Reader, *tar.Reader, error)
 	}
 	return f, gz, tar.NewReader(gz), nil
 }
-func archiveMetadata(tr *tar.Reader) (Backup, error) {
-	var b Backup
+func archiveMetadata(tr *tar.Reader) (profile.Config, error) {
+	var b profile.Config
 	h, err := tr.Next()
 	if err != nil || h.Name != "backup.json" || h.Typeflag != tar.TypeReg || h.Size < 0 || h.Size > profile.MaxConfig {
 		return b, errors.New("备份文件已损坏")
@@ -49,7 +49,7 @@ func archiveMetadata(tr *tar.Reader) (Backup, error) {
 	}
 	return b, nil
 }
-func writeRoutingBackup(destination string, b Backup, root string) error {
+func writeRoutingBackup(destination string, b profile.Config, root string) error {
 	current, err := ruledata.Current(root)
 	if err != nil {
 		return err
@@ -165,8 +165,8 @@ func writeRoutingBackup(destination string, b Backup, root string) error {
 }
 
 // stageRoutingBackup extracts and validates before touching the active data or configuration.
-func stageRoutingBackup(file, root string) (Backup, string, string, error) {
-	var b Backup
+func stageRoutingBackup(file, root string) (profile.Config, string, string, error) {
+	var b profile.Config
 	if err := os.MkdirAll(root, 0700); err != nil {
 		return b, "", "", err
 	}
@@ -190,7 +190,7 @@ func stageRoutingBackup(file, root string) (Backup, string, string, error) {
 	if err != nil {
 		return b, "", "", err
 	}
-	if err = b.validate(); err != nil || b.Version != 3 || b.Kind != "routing" {
+	if err = b.ValidateSnapshot(); err != nil {
 		return b, "", "", errors.New("路由规则备份内容无效")
 	}
 	total := int64(0)

@@ -263,16 +263,14 @@ func (a *App) exportPayload(kind, id string) (string, []byte, error) {
 	var data []byte
 	name := ""
 	switch kind {
-	case "backup":
-		data, _ = json.MarshalIndent(a.config, "", "  ")
-		name = "backup-" + time.Now().Format("20060102-150405") + ".json"
 	case "nodes":
-		var lines []string
-		for _, n := range a.config.Nodes {
-			lines = append(lines, profile.URI(n))
+		b := nodeBundle{Format: nodeFormat, Nodes: a.config.Nodes, Subscriptions: a.config.Subscriptions, Selected: a.config.Selected, RuleOverlays: a.config.RuleOverlays}
+		var err error
+		data, err = json.Marshal(b)
+		if err != nil {
+			return "", nil, err
 		}
-		data = []byte(strings.Join(lines, "\n"))
-		name = "nodes-" + time.Now().Format("20060102-150405") + ".txt"
+		name = "lanboat-nodes-" + time.Now().Format("20060102-150405") + ".json"
 	case "config":
 		for _, f := range a.config.Files {
 			if f.ID == id {
@@ -287,21 +285,6 @@ func (a *App) exportPayload(kind, id string) (string, []byte, error) {
 	return name, data, nil
 }
 
-func (a *App) ExportData(kind, id string) (string, error) {
-	name, data, err := a.exportPayload(kind, id)
-	if err != nil {
-		return "", err
-	}
-	dir := filepath.Join(filepath.Dir(a.path), "exports")
-	if err = os.MkdirAll(dir, 0700); err != nil {
-		return "", err
-	}
-	path := filepath.Join(dir, name)
-	if err = writePrivateFile(path, data); err != nil {
-		return "", err
-	}
-	return path, nil
-}
 func (a *App) ExportDataTo(kind, id, directory string) (string, error) {
 	name, data, err := a.exportPayload(kind, id)
 	if err != nil {
@@ -409,6 +392,11 @@ func (a *App) mirrorConfigs(c profile.Config) {
 	}
 }
 func (a *App) ImportBackup(input string) error {
+	input = strings.TrimSpace(input)
+	// Earlier exports could be named .tar-2.gz after a filename collision.
+	if !strings.HasPrefix(input, "{") && !strings.Contains(input, "\n") && strings.HasSuffix(strings.ToLower(input), ".gz") {
+		return a.importArchive(input)
+	}
 	content, err := a.readImport(input, profile.MaxConfig)
 	if err != nil {
 		return err
@@ -417,17 +405,7 @@ func (a *App) ImportBackup(input string) error {
 	if err = json.Unmarshal([]byte(content), &c); err != nil {
 		return errors.New("备份 JSON 无效")
 	}
-	dir, err := os.MkdirTemp(filepath.Dir(a.path), ".restore-")
-	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(dir)
-	path := filepath.Join(dir, "config.json")
-	if err = profile.Save(path, c); err != nil {
-		return err
-	}
-	c, err = profile.Load(path)
-	if err != nil {
+	if err = c.ValidateSnapshot(); err != nil {
 		return err
 	}
 	profile.EnsureFiles(&c)
