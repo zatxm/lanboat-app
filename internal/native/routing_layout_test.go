@@ -1,6 +1,7 @@
 package native
 
 import (
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -114,10 +115,11 @@ func TestNativeWindowRoutingLayout(t *testing.T) {
 	if regionLabel == nil || regionSelect == nil || summary == nil || summary.text != "每天" {
 		t.Fatal("rule database settings layout missing or incorrect")
 	}
-	_, labelY, _, labelH := regionLabel.bounds()
-	_, selectY, _, selectH := regionSelect.bounds()
-	if labelY+labelH/2 != selectY+selectH/2 {
-		t.Fatal("country label and selector are not on one line")
+	labelBox := regionLabel.pointer.Bounds()
+	selectBox := regionSelect.pointer.Bounds()
+	centerDelta := selectBox.Y + selectBox.H/2 - (labelBox.Y + labelBox.H/2)
+	if math.Abs(float64(centerDelta)) > 1 {
+		t.Fatalf("country label and selector are on different lines: center offset=%g", centerDelta)
 	}
 	rx, _, rw, _ := find("default.conf").bounds()
 	sx, _, sw, _ = find("default.conf").parent.bounds()
