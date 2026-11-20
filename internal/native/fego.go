@@ -1,10 +1,10 @@
 package native
 
 import (
-	"fmt"
+	"bytes"
 	"image"
 	"image/color"
-	"os"
+	"image/png"
 	"os/exec"
 	"runtime"
 	"slices"
@@ -14,8 +14,11 @@ import (
 
 	"github.com/zatxm/fego"
 	"github.com/zatxm/fego/ui"
+	"github.com/zatxm/lanboat-app/internal/appmeta"
 	"github.com/zatxm/lanboat-app/internal/desktop"
 	"github.com/zatxm/lanboat-app/internal/i18n"
+	icons "github.com/zatxm/lanboat-app/packaging"
+	"go.uber.org/zap"
 )
 
 type option struct{ value, label string }
@@ -50,13 +53,10 @@ type control struct {
 	widget           *widget
 	config, disabled bool
 }
-type systemTray struct {
-	relabel func(string, string)
-	close   func()
-}
 
 type nativeView struct {
-	tray                                                *systemTray
+	tray                                                *fego.Tray
+	logger                                              *zap.Logger
 	theme                                               string
 	language                                            string
 	window                                              *fego.Window
@@ -96,7 +96,7 @@ var active *nativeView
 
 const toolkitName = "Fego"
 
-func toolkitVersion() string { return "1.0.2" }
+func toolkitVersion() string { return "1.0.3" }
 
 func newView(u *UI) (*nativeView, error) {
 	v := &nativeView{ui: u, widgets: map[int]*widget{}, nav: map[string]*widget{}}
@@ -106,30 +106,52 @@ func newView(u *UI) (*nativeView, error) {
 	return v, nil
 }
 func attachWindow(v *nativeView) { v.doc = ui.View(v.shell.pointer.Fill()) }
-func Run(backend *desktop.App) error {
+func Run(backend *desktop.App, logger *zap.Logger) error {
+	appID, title := "org.lanboat.desktop", appmeta.Name
+	windowPNG, trayPNG := icons.PNG, icons.TrayPNG
+	if runtime.GOOS == "linux" {
+		appID, title = appmeta.ID, linuxWindowTitle
+		windowPNG = icons.WindowPNG
+	}
+	if runtime.GOOS == "darwin" {
+		trayPNG = icons.MenuPNG
+	}
+	windowIcon, err := png.Decode(bytes.NewReader(windowPNG))
+	if err != nil {
+		return err
+	}
+	trayIcon, err := png.Decode(bytes.NewReader(trayPNG))
+	if err != nil {
+		return err
+	}
+	if err := fego.App.SetOptions(fego.AppOptions{ID: appID, Name: appmeta.Name, Icon: windowIcon}); err != nil {
+		return err
+	}
 	u := newUI(backend, requestIdle)
 	u.flagsEnabled = true
 	v, err := newView(u)
 	if err != nil {
 		return err
 	}
+	v.logger = logger
 	active = v
 	defer func() { close(u.done); active = nil; v.dispose() }()
 	var openErr error
 	fego.App.WhenReady(func() {
-		title := fmt.Sprintf("Lanboat (%d)", os.Getpid())
-		v.window, openErr = fego.App.NewWindow(fego.WindowOptions{Title: title, Width: 1160, Height: 800, Content: display{v}})
+		opts := fego.WindowOptions{Title: title, Width: 1160, Height: 800, Content: display{v}}
+		if runtime.GOOS == "darwin" {
+			opts.TitleBarIcon = trayIcon
+		}
+		v.window, openErr = fego.App.NewWindow(opts)
 		if openErr != nil {
 			return
 		}
-		showWindow := installWindowIcon(title)
-		title = "Lanboat"
-		if runtime.GOOS == "linux" {
-			title = linuxWindowTitle
-		}
-		v.window.SetTitle(title)
 		v.render()
-		v.tray = startSystemTray(v.translate("显示主窗口"), v.translate("退出"), showWindow)
+		tray, err := fego.App.NewTray(fego.TrayOptions{Icon: trayIcon, Menu: v.trayMenu()})
+		if err != nil {
+			logger.Warn("initialize system tray", zap.Error(err))
+		}
+		v.tray = tray
 		go u.poll()
 		go u.backend.RunRuleUpdates(u.done)
 	})
@@ -138,6 +160,13 @@ func Run(backend *desktop.App) error {
 		return openErr
 	}
 	return err
+}
+
+func (v *nativeView) trayMenu() fego.Menu {
+	return fego.Menu{
+		{Label: v.translate("显示主窗口"), OnClick: v.window.Activate},
+		{Label: v.translate("退出"), OnClick: fego.App.Quit},
+	}
 }
 
 var idleQueued atomic.Bool
@@ -308,9 +337,6 @@ func (v *nativeView) clear(parent *widget) {
 }
 
 func (v *nativeView) dispose() {
-	if v.tray != nil {
-		v.tray.close()
-	}
 	if v.tester != nil {
 		v.tester.Close()
 	}
@@ -471,7 +497,9 @@ func (v *nativeView) refreshLanguage() {
 	}
 	v.language = lang
 	if v.tray != nil {
-		v.tray.relabel(v.translate("显示主窗口"), v.translate("退出"))
+		if err := v.tray.SetMenu(v.trayMenu()); err != nil {
+			v.logger.Warn("update system tray menu", zap.Error(err))
+		}
 	}
 	for _, w := range v.widgets {
 		w.localize()

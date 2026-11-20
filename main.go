@@ -79,5 +79,5 @@ func run() error {
 	defer signal.Stop(signals)
 	go func() { <-signals; app.Shutdown(nil); _ = closeLog(); os.Exit(0) }()
 	logger.Info("application started")
-	return native.Run(app)
+	return native.Run(app, logger)
 }

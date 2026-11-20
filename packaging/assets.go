@@ -8,3 +8,9 @@ var PNG []byte
 
 //go:embed icons/32x32/lanboat.png
 var TrayPNG []byte
+
+//go:embed icons/64x64/lanboat.png
+var WindowPNG []byte
+
+//go:embed icons/16x16/lanboat.png
+var MenuPNG []byte

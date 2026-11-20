@@ -3,13 +3,11 @@ module github.com/zatxm/lanboat-app
 go 1.27.3
 
 require (
-	fyne.io/systray v1.12.3-0.20260810170012-af4e8e793ec4
-	github.com/ebitengine/purego v0.11.1
 	github.com/klauspost/compress v1.20.4
 	github.com/miekg/dns v1.1.67
 	github.com/sagernet/sing v0.9.5
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
-	github.com/zatxm/fego v1.0.2
+	github.com/zatxm/fego v1.0.3
 	github.com/zatxm/lanboat-allinone v1.0.7
 	github.com/zatxm/lumberjack/v2 v2.0.0
 	go.uber.org/zap v1.28.0
@@ -22,6 +20,7 @@ require (
 
 require (
 	github.com/andybalholm/brotli v1.3.0 // indirect
+	github.com/ebitengine/purego v0.11.1 // indirect
 	github.com/godbus/dbus/v5 v5.2.2 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/lestrrat-go/strftime v1.2.0 // indirect

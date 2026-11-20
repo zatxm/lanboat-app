@@ -18,7 +18,7 @@ Source: "lanboat.ico"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\build\bin\Lanboat.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\build\notices\*"; DestDir: "{app}\notices"; Flags: recursesubdirs
 [Icons]
-Name: "{userprograms}\Lanboat"; Filename: "{app}\Lanboat.exe"; IconFilename: "{app}\lanboat.ico"
+Name: "{userprograms}\Lanboat"; Filename: "{app}\Lanboat.exe"; IconFilename: "{app}\lanboat.ico"; AppUserModelID: "org.lanboat.desktop"
 [Registry]
 Root: HKCU; Subkey: "Software\Lanboat"; ValueType: string; ValueName: "DataDir"; ValueData: "{code:DataPath}"; Flags: uninsdeletevalue
 [Code]

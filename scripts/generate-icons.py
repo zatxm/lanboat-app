@@ -32,4 +32,3 @@ def png(size,pixels):
  return b'\x89PNG\r\n\x1a\n'+chunk(b'IHDR',struct.pack('>IIBBBBB',size,size,8,6,0,0,0))+chunk(b'IDAT',zlib.compress(rows))+chunk(b'IEND',b'')
 for size in [16,32,48,64,128,256]:
  pixels=render(size);p=root/f'packaging/icons/{size}x{size}/lanboat.png';p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(png(size,pixels))
- if size==64:(root/'internal/native/icon.rgba').write_bytes(pixels)

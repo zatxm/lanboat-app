@@ -41,7 +41,7 @@ case "$target" in
       pid=$!
       trap "kill $pid 2>/dev/null || true; wait $pid || true" EXIT
       for attempt in {1..100}; do
-        if xwininfo -root -tree | grep -F "(\"lanboat\" \"Lanboat\")" >/dev/null; then exit 0; fi
+        if xwininfo -root -tree | grep -F "(\"lanboat\" \"lanboat\")" >/dev/null; then exit 0; fi
         kill -0 "$pid" 2>/dev/null || break
         sleep 0.2
       done
