@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
-app=build/macos/Lanboat.app
+payload=build/macos/payload
+app="$payload/Lanboat.app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" dist
 install -m755 build/bin/Lanboat "$app/Contents/MacOS/Lanboat"
 install -m644 packaging/macos/Lanboat.icns "$app/Contents/Resources/"
@@ -19,4 +20,10 @@ cat >"$app/Contents/Info.plist" <<PLIST
 PLIST
 codesign --force --sign - "$app"
 codesign --verify --strict "$app"
-pkgbuild --component "$app" --install-location /Applications --identifier org.lanboat.desktop --version "$LANBOAT_VERSION" "dist/Lanboat-$LANBOAT_VERSION-macos-$1.pkg"
+# Keep Installer from updating a copy of the app outside /Applications.
+components=build/macos/components.plist
+pkgbuild --analyze --root "$payload" "$components"
+/usr/libexec/PlistBuddy -c 'Set :0:BundleIsRelocatable false' "$components"
+pkgbuild --root "$payload" --component-plist "$components" \
+  --install-location /Applications --identifier org.lanboat.desktop \
+  --version "$LANBOAT_VERSION" "dist/Lanboat-$LANBOAT_VERSION-macos-$1.pkg"
