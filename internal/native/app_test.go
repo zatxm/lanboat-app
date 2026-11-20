@@ -17,8 +17,15 @@ func testUI(t *testing.T) *UI {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { backend.Shutdown(nil) })
+	settings := backend.GetState().Config.Settings
+	// Tests assert Chinese labels unless they explicitly switch language.
+	settings.Language = "zh"
+	if err := backend.SaveSettings(settings); err != nil {
+		t.Fatal(err)
+	}
 	u := newUI(backend, func() {})
-	t.Cleanup(func() { close(u.done); backend.Shutdown(nil) })
+	t.Cleanup(func() { close(u.done) })
 	return u
 }
 

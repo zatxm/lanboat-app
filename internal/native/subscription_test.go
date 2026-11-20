@@ -1,6 +1,7 @@
 package native
 
 import (
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -53,11 +54,20 @@ func TestNativeWindowSubscriptionForm(t *testing.T) {
 			break
 		}
 	}
-	x, y, width, _ := label.bounds()
-	px, py, _, _ := v.inputs["protocol"].bounds()
-	if px-x-width != 12 || py < y-10 || py > y+10 {
-		t.Fatal("protocol select not adjacent to label", x, px, width, y, py)
+	if label == nil {
+		t.Fatal("missing protocol label")
 	}
+	checkProtocolLayout := func() {
+		t.Helper()
+		labelBox := label.pointer.Bounds()
+		selectBox := v.inputs["protocol"].pointer.Bounds()
+		gap := selectBox.X - (labelBox.X + labelBox.W)
+		centerDelta := selectBox.Y + selectBox.H/2 - (labelBox.Y + labelBox.H/2)
+		if math.Abs(float64(gap-12)) > 1 || math.Abs(float64(centerDelta)) > 1 {
+			t.Fatalf("protocol select placement: gap=%g, center offset=%g", gap, centerDelta)
+		}
+	}
+	checkProtocolLayout()
 	for _, key := range []string{"subUDP", "subInsecure", "subFastOpen"} {
 		w := v.inputs[key]
 		if len(w.options) != 0 || !strings.Contains(w.classes, "switch") || u.field(key).Text() != "false" {
@@ -100,6 +110,7 @@ func TestNativeWindowSubscriptionForm(t *testing.T) {
 		t.Fatal("language update", u.err)
 	}
 	assertEnglishWidgets(t, v)
+	checkProtocolLayout()
 	if u.field("name").Text() != "Subscription notes" || v.inputs["subPassword"].nativeText() != "decrypt-secret" || next != v.next {
 		t.Fatal("translation lost subscription fields")
 	}
