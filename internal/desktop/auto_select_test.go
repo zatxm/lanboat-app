@@ -94,7 +94,7 @@ func TestFastestNodeSkipsUnreachableAndUnsupported(t *testing.T) {
 	legacy.SetOption("ota", true)
 	c := a.config
 	c.Nodes, c.Selected = []profile.Node{bad, unsupported, legacy, good}, bad.ID
-	id, err := a.fastestNode(context.Background(), c)
+	id, err := a.fastestNode(context.Background(), c, "")
 	if err != nil || id != good.ID {
 		t.Fatal(id, err)
 	}
@@ -103,7 +103,7 @@ func TestFastestNodeSkipsUnreachableAndUnsupported(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := a.fastestNode(ctx, c); err != context.Canceled {
+	if _, err := a.fastestNode(ctx, c, ""); err != context.Canceled {
 		t.Fatal("cancellation ignored", err)
 	}
 }
@@ -139,11 +139,11 @@ func TestAutoSelectConnectedAndNextConnect(t *testing.T) {
 	if err := a.Connect(); err != nil {
 		t.Fatal(err)
 	}
-	if err := a.SetAutoSelect(true); err != nil {
+	if err := a.SetAutoSelect("", true); err != nil {
 		t.Fatal(err)
 	}
 	state, status := a.GetState(), a.GetStatus()
-	if !status.Connected || status.ActiveNode != "fast" || state.Config.Selected != "fast" || !state.Config.Settings.AutoSelect {
+	if !status.Connected || status.ActiveNode != "fast" || state.Config.Selected != "fast" || !state.Config.Settings.AutoSelectEnabled("") {
 		t.Fatal(state.Config.Settings, status)
 	}
 	if state.NodeDelays["fast"] >= state.NodeDelays["slow"] || state.NodeDelays["bad"] != -1 {
@@ -166,10 +166,10 @@ func TestAutoSelectConnectedAndNextConnect(t *testing.T) {
 	}
 	assertProxy("fast")
 	before := calls.Load()
-	if err := a.SetAutoSelect(false); err != nil {
+	if err := a.SetAutoSelect("", false); err != nil {
 		t.Fatal(err)
 	}
-	if calls.Load() != before || a.GetStatus().ActiveNode != "fast" || a.GetState().Config.Settings.AutoSelect {
+	if calls.Load() != before || a.GetStatus().ActiveNode != "fast" || a.GetState().Config.Settings.AutoSelectEnabled("") {
 		t.Fatal("disabling restarted or tested nodes")
 	}
 	if err := a.Disconnect(); err != nil {
@@ -178,7 +178,7 @@ func TestAutoSelectConnectedAndNextConnect(t *testing.T) {
 	if err := a.SelectNode("slow"); err != nil {
 		t.Fatal(err)
 	}
-	if err := a.SetAutoSelect(true); err != nil {
+	if err := a.SetAutoSelect("", true); err != nil {
 		t.Fatal(err)
 	}
 	if calls.Load() != before {
@@ -190,6 +190,80 @@ func TestAutoSelectConnectedAndNextConnect(t *testing.T) {
 	assertProxy("fast")
 	if a.GetStatus().ActiveNode != "fast" {
 		t.Fatal("connect ignored automatic selection")
+	}
+}
+
+func TestAutoSelectIsScopedToSelectedGroup(t *testing.T) {
+	a := testApp(t)
+	t.Cleanup(func() { a.Shutdown(nil) })
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(204) }))
+	defer origin.Close()
+	a.config.Settings.Port = autoSelectPort(t)
+	a.config.Settings.Mode = "global"
+	a.config.Settings.TestURL = origin.URL
+	a.config.Settings.TestTimeout = 2
+
+	var localCalls, subCalls atomic.Int32
+	node := func(id, source string, delay time.Duration, calls *atomic.Int32) profile.Node {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			calls.Add(1)
+			time.Sleep(delay)
+			autoProxyTunnel(w, r)
+		}))
+		t.Cleanup(server.Close)
+		n := autoHTTPNode(id, server.URL)
+		n.Source = source
+		return n
+	}
+	a.config.Subscriptions = []profile.Subscription{{ID: "feed", Name: "Feed", URL: "https://example.com/feed"}}
+	a.config.Nodes = []profile.Node{
+		node("local", "orphan", 0, &localCalls),
+		node("sub-slow", "feed", 100*time.Millisecond, &subCalls),
+		node("sub-fast", "feed", 40*time.Millisecond, &subCalls),
+	}
+	a.config.Selected = "local"
+	if err := a.SetAutoSelect("", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Connect(); err != nil {
+		t.Fatal(err)
+	}
+	if localCalls.Load() == 0 || subCalls.Load() != 0 || a.GetStatus().ActiveNode != "local" {
+		t.Fatal("local auto selection probed or switched to the subscription")
+	}
+	if err := a.SetAutoSelect("feed", true); err != nil {
+		t.Fatal(err)
+	}
+	if subCalls.Load() != 0 || a.GetStatus().ActiveNode != "local" {
+		t.Fatal("enabling a different group disturbed the active connection")
+	}
+	if err := a.Disconnect(); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.SelectNode("sub-slow"); err != nil {
+		t.Fatal(err)
+	}
+	initialLocalCalls := localCalls.Load()
+	if err := a.Connect(); err != nil {
+		t.Fatal(err)
+	}
+	state := a.GetState()
+	if localCalls.Load() != initialLocalCalls || subCalls.Load() == 0 || a.GetStatus().ActiveNode != "sub-fast" {
+		t.Fatal("subscription auto selection did not stay within the subscription")
+	}
+	if !state.Config.Settings.AutoSelectEnabled("") || !state.Config.Settings.AutoSelectEnabled("feed") ||
+		state.NodeDelays["local"] < 1 || state.NodeDelays["sub-fast"] < 1 {
+		t.Fatal("group settings or previous measurements were lost")
+	}
+	if err := a.Disconnect(); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.DeleteSubscription("feed"); err != nil {
+		t.Fatal(err)
+	}
+	settings := a.GetState().Config.Settings
+	if settings.AutoSelectEnabled("feed") || !settings.AutoSelectEnabled("") {
+		t.Fatal("deleting the subscription affected the wrong setting")
 	}
 }
 
@@ -225,10 +299,10 @@ func TestAutoSelectFailurePreservesOriginalConnection(t *testing.T) {
 		t.Fatal(err)
 	}
 	fail.Store(true)
-	if err := a.SetAutoSelect(true); err == nil {
+	if err := a.SetAutoSelect("", true); err == nil {
 		t.Fatal("all failed probes were accepted")
 	}
-	if status := a.GetStatus(); !status.Connected || status.ActiveNode != "slow" || a.GetState().Config.Settings.AutoSelect {
+	if status := a.GetStatus(); !status.Connected || status.ActiveNode != "slow" || a.GetState().Config.Settings.AutoSelectEnabled("") {
 		t.Fatal("failed detection lost original connection", status)
 	}
 	if os.Geteuid() == 0 {
@@ -240,10 +314,10 @@ func TestAutoSelectFailurePreservesOriginalConnection(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer os.Chmod(dir, 0700)
-	if err := a.SetAutoSelect(true); err == nil || !strings.Contains(err.Error(), "已恢复原节点") {
+	if err := a.SetAutoSelect("", true); err == nil || !strings.Contains(err.Error(), "已恢复原节点") {
 		t.Fatal("failed persistence did not trigger connection rollback", err)
 	}
-	if status := a.GetStatus(); !status.Connected || status.ActiveNode != "slow" || a.GetState().Config.Settings.AutoSelect {
+	if status := a.GetStatus(); !status.Connected || status.ActiveNode != "slow" || a.GetState().Config.Settings.AutoSelectEnabled("") {
 		t.Fatal("save failure did not restore original node", status)
 	}
 	p, _ := url.Parse("http://127.0.0.1:" + strconv.Itoa(a.config.Settings.Port))
@@ -273,7 +347,7 @@ func TestDisconnectCancelsAutomaticSelection(t *testing.T) {
 		t.Fatal(err)
 	}
 	done := make(chan error, 1)
-	go func() { done <- a.SetAutoSelect(true) }()
+	go func() { done <- a.SetAutoSelect("", true) }()
 	select {
 	case <-entered:
 	case <-time.After(5 * time.Second):
@@ -304,7 +378,7 @@ func TestAutoSelectDirectModeNeedsNoNodes(t *testing.T) {
 	if err := a.Connect(); err != nil {
 		t.Fatal(err)
 	}
-	if err := a.SetAutoSelect(true); err != nil {
+	if err := a.SetAutoSelect("", true); err != nil {
 		t.Fatal(err)
 	}
 	if status := a.GetStatus(); !status.Connected || status.ActiveNode != "" {

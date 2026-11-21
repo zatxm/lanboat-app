@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/zatxm/fego"
+
 	"github.com/zatxm/lanboat-app/internal/profile"
 )
 
@@ -26,6 +28,43 @@ func TestNativeWindowProxySettings(t *testing.T) {
 		t.Fatal("missing", text)
 		return nil
 	}
+	clickPointer := func(w *widget) {
+		r := w.pointer.Bounds()
+		x, y := r.X+r.W/2, r.Y+r.H/2
+		v.send(fego.Event{Kind: fego.PointerMove, X: x, Y: y})
+		v.send(fego.Event{Kind: fego.PointerDown, X: x, Y: y, Button: 1})
+		v.send(fego.Event{Kind: fego.PointerUp, X: x, Y: y, Button: 1})
+		pump()
+	}
+	checkRows := func(keys, labels []string) {
+		t.Helper()
+		var columnX, width, previousBottom float32
+		for i, key := range keys {
+			input := v.inputs["proxy."+key]
+			if input == nil {
+				t.Fatalf("missing proxy input %q", key)
+			}
+			r := input.pointer.Bounds()
+			if r.W <= 0 || i > 0 && (r.X != columnX || r.W != width || r.Y < previousBottom) {
+				t.Fatalf("proxy input %q is out of its column or row: %+v", key, r)
+			}
+			var label *widget
+			for _, w := range v.widgets {
+				if w.parent == input.parent && w.text == labels[i] {
+					label = w
+					break
+				}
+			}
+			if label == nil {
+				t.Fatalf("proxy label %q is not in the input row", labels[i])
+			}
+			l := label.pointer.Bounds()
+			if dy := (l.Y + l.H/2) - (r.Y + r.H/2); dy < -1 || dy > 1 || l.X+l.W >= r.X {
+				t.Fatalf("proxy label %q is not next to its input: %+v %+v", labels[i], l, r)
+			}
+			columnX, width, previousBottom = r.X, r.W, r.Y+r.H
+		}
+	}
 	u.navigate("settings")
 	v.render()
 	pump()
@@ -40,24 +79,35 @@ func TestNativeWindowProxySettings(t *testing.T) {
 		t.Fatal("proxy summary navigation")
 	}
 	summary := v.body
-	u.editProxy("port")
-	pump()
+	edit := button("修改")
+	x, y, width, _ := edit.bounds()
+	before := v.tester.Snapshot().RGBAAt(x+width/2, y+3)
+	clickPointer(edit)
+	checkRows([]string{"port"}, []string{"端口"})
 	v.inputs["proxy.port"].edit("1089")
 	if u.state.Config.Settings.Port == 1089 {
 		t.Fatal("port draft applied")
 	}
-	u.saveProxySection("port")
+	button("确定").click()
 	waitJob(t, u)
 	pump()
 	if u.popup != nil || v.body != summary || u.state.Config.Settings.Port != 1089 {
 		t.Fatal("port save")
 	}
+	if after := v.tester.Snapshot().RGBAAt(x+width/2, y+3); after != before {
+		t.Fatal("click left a background on the edit icon", before, after)
+	}
 	u.editProxy("sharing")
 	pump()
-	button("允许局域网设备连接").click()
-	pump()
-	button("访问认证").click()
-	pump()
+	clickPointer(button("允许局域网设备连接"))
+	auth := button("访问认证")
+	clickPointer(auth)
+	x, y, width, _ = auth.bounds()
+	frame := v.tester.Snapshot()
+	if !auth.pointer.Checked() || frame.RGBAAt(x+width/2, y+1) != frame.RGBAAt(x-6, y+1) {
+		t.Fatal("switch did not toggle or clicking left a focus background")
+	}
+	checkRows([]string{"username", "password"}, []string{"用户", "密码"})
 	v.inputs["proxy.username"].edit("local-user")
 	v.inputs["proxy.password"].edit("private-key")
 	button("访问认证").click()
@@ -74,6 +124,7 @@ func TestNativeWindowProxySettings(t *testing.T) {
 	pump()
 	button("启用前置代理").click()
 	pump()
+	checkRows([]string{"type", "server", "upstreamPort", "upstreamUser", "upstreamPassword"}, []string{"类型", "地址", "端口", "用户", "密码"})
 	if u.field("proxy.type").Text() != "socks5" || v.inputs["proxy.server"].placeholder != "IP" {
 		t.Fatal("upstream defaults")
 	}

@@ -1,11 +1,17 @@
 package native
 
 import (
+	"net/netip"
 	"strconv"
-
 	"strings"
 
+	"github.com/zatxm/fego/ui"
 	"github.com/zatxm/lanboat-app/internal/profile"
+)
+
+const (
+	dnsBootstrapIP  = "1.1.1.1"
+	dnsBootstrapURL = "udp://" + dnsBootstrapIP
 )
 
 func (u *UI) fillDNS(s profile.DNSSettings) {
@@ -18,6 +24,19 @@ func (u *UI) fillDNS(s profile.DNSSettings) {
 	for k, v := range map[string]int{"timeout": s.Timeout, "capacity": s.Capacity, "staleTTL": s.StaleTTL} {
 		u.field("dns." + k).SetText(strconv.Itoa(v))
 	}
+
+	bootstrapMode := s.Bootstrap
+	if bootstrapMode != "system" && bootstrapMode != "local" {
+		if _, err := netip.ParseAddr(s.Bootstrap); err == nil {
+			bootstrapMode = "ip"
+		} else {
+			bootstrapMode = "protocol"
+			if !strings.Contains(s.Bootstrap, "://") {
+				u.field("dns.bootstrap").SetText("udp://" + s.Bootstrap)
+			}
+		}
+	}
+	u.field("dns.bootstrapMode").SetText(bootstrapMode)
 
 	for _, key := range []string{"direct", "proxy"} {
 		u.prepareDNSResolver(key)
@@ -47,7 +66,28 @@ func (u *UI) saveDNS() {
 	text := func(k string) string { return strings.TrimSpace(u.field("dns." + k).Text()) }
 	yes := func(k string) bool { return text(k) == "true" }
 	number := func(k string) int { n, _ := strconv.Atoi(text(k)); return n }
-	s := profile.DNSSettings{Persist: yes("persist"), ProxyNode: text("proxyNode"), Bootstrap: text("bootstrap"), Direct: text("direct"), Proxy: text("proxy"), Policy: text("policy"), Final: text("final"), ProxyRoute: text("proxyRoute"), FollowRules: yes("followRules"), Strategy: text("strategy"), Timeout: number("timeout"), Cache: yes("cache"), Capacity: number("capacity"), Optimistic: yes("optimistic"), StaleTTL: number("staleTTL"), FakeIP: yes("fakeIP"), FakeIPv4: text("fakeIPv4"), FakeIPv6: text("fakeIPv6"), FakeIPFilter: text("filter")}
+	bootstrap := text("bootstrap")
+	switch text("bootstrapMode") {
+	case "ip":
+		if bootstrap == "" {
+			bootstrap = dnsBootstrapIP
+		}
+		if ip, err := netip.ParseAddr(bootstrap); err != nil || ip.IsUnspecified() {
+			u.err = "引导解析请输入IPv4或IPv6地址"
+			u.notify()
+			return
+		}
+	case "protocol":
+		if bootstrap == "" {
+			bootstrap = dnsBootstrapURL
+		}
+		if !strings.Contains(bootstrap, "://") {
+			u.err = "引导解析请输入带协议的IP地址"
+			u.notify()
+			return
+		}
+	}
+	s := profile.DNSSettings{Persist: yes("persist"), ProxyNode: text("proxyNode"), Bootstrap: bootstrap, Direct: text("direct"), Proxy: text("proxy"), Policy: text("policy"), Final: text("final"), ProxyRoute: text("proxyRoute"), FollowRules: yes("followRules"), Strategy: text("strategy"), Timeout: number("timeout"), Cache: yes("cache"), Capacity: number("capacity"), Optimistic: yes("optimistic"), StaleTTL: number("staleTTL"), FakeIP: yes("fakeIP"), FakeIPv4: text("fakeIPv4"), FakeIPv6: text("fakeIPv6"), FakeIPFilter: text("filter")}
 	if err := s.Validate(); err != nil {
 		u.err = err.Error()
 		u.notify()
@@ -73,7 +113,7 @@ func (v *nativeView) dnsSwitch(title, key string) *widget {
 		}
 		w.setClasses(c)
 	}
-	return v.box("", true, 10, false, v.label(title, "node-name"), w)
+	return w
 }
 func (u *UI) prepareDNSResolver(key string) {
 	address := u.field("dns." + key).Text()
@@ -90,8 +130,44 @@ func (u *UI) prepareDNSResolver(key string) {
 	u.field("dns." + key + "Type").SetText(kind)
 	u.field("dns." + key + "Server").SetText(server)
 }
+func (v *nativeView) dnsToolbar() *widget {
+	u := v.ui
+	return v.box("", true, 4, false,
+		v.button("泄漏检测", "link icon-globe home-action tight-icon flush-left", false, false, u.diagnoseDNS),
+		v.button("查询诊断", "link icon-test home-action tight-icon", false, false, func() { u.result = ""; u.openDetail("dns-query") }),
+		v.button("还原默认", "link icon-refresh home-action tight-icon flush-left", false, false, u.resetDNSDefaults))
+}
+
 func (v *nativeView) dnsFields(box *widget) {
 	u := v.ui
+	labelWidth := float32(104)
+	if u.state.Config.Settings.Language == "en" {
+		labelWidth = 130
+	}
+	fieldRow := func(title string, control *widget, trailing ...*widget) *widget {
+		label := v.box("", true, 0, false, v.label(title, "field-label"))
+		label.pointer.Width(labelWidth).Justify(ui.End)
+		row := v.box("", true, 12, false, label, control)
+		v.pack(row, trailing...)
+		if control.kind == "text" {
+			row.pointer.AlignItems(ui.Start)
+			label.pointer.Padding(10, 0, 0, 0)
+		}
+		return row
+	}
+	textField := func(key, placeholder string) *widget {
+		input := v.input("dns."+key, placeholder, false, false, false)
+		input.setClasses("dns-control")
+		return input
+	}
+	fullField := func(key, placeholder string, multiline bool) *widget {
+		input := v.input("dns."+key, placeholder, multiline, false, false)
+		input.setExpand(true)
+		return input
+	}
+	switchField := func(title, key string) *widget {
+		return fieldRow(title, v.dnsSwitch(title, key))
+	}
 	selectField := func(title, key string, options []option, rebuild bool) *widget {
 		choice := v.selectWidget(u.field("dns."+key).Text(), options, false, func(value string) {
 			u.field("dns." + key).SetText(value)
@@ -99,26 +175,63 @@ func (v *nativeView) dnsFields(box *widget) {
 				u.render()
 			}
 		})
-		choice.setClasses("protocol-choice")
-		return v.box("", true, 16, false, v.label(title, "field-label dns-select-key"), choice)
+		choice.setClasses("dns-control")
+		return fieldRow(title, choice)
 	}
 	layer := func(title, description string, children ...*widget) {
-		card := v.box("panel", false, 16, false, v.label(title, "dialog-title"), v.label(description, "help"))
+		card := v.box("panel", false, 16, false, v.label(title, "dialog-title"))
+		if description != "" {
+			v.pack(card, v.label(description, "help"))
+		}
 		v.pack(card, children...)
 		v.pack(box, card)
 	}
-	v.pack(box, v.box("", true, 4, false, v.button("泄漏检测", "link icon-globe home-action tight-icon flush-left", false, false, u.diagnoseDNS), v.button("查询诊断", "link icon-test home-action tight-icon", false, false, func() { u.result = ""; u.openDetail("dns-query") }), v.button("还原默认", "link icon-refresh home-action tight-icon flush-left", false, false, u.resetDNSDefaults), v.spacer()))
-	layer("引导解析", "解析DNS及节点服务器域名，避免循环依赖。", v.field("dns.bootstrap", "引导DNS", "system或udp://1.1.1.1", false))
-	policy := v.box("field", false, 7, false, v.label("域名策略", "field-label"), v.input("dns.policy", "DOMAIN-SUFFIX,example.com,direct\nDOMAIN,blocked.example,reject", true, false, false))
-	help := "每行：类型,匹配内容,direct / proxy / bootstrap / reject"
-	layer("解析策略", "从上到下匹配，优先于路由文件中的域名规则。", v.box("", true, 8, false, v.label("解析规则", "field-label"), v.spacer(), v.button("添加", "link icon-add", false, false, func() {
+	bootstrapMode := u.field("dns.bootstrapMode").Text()
+	bootstrap := v.selectWidget(bootstrapMode, []option{{"system", "system"}, {"local", "local"}, {"ip", "IP（UDP 53）"}, {"protocol", "带协议IP"}}, false, func(mode string) {
+		if mode == bootstrapMode {
+			return
+		}
+		u.field("dns.bootstrapMode").SetText(mode)
+		if mode == "ip" || mode == "protocol" {
+			u.field("dns.bootstrap").SetText("")
+		} else {
+			u.field("dns.bootstrap").SetText(mode)
+		}
+		u.render()
+	})
+	bootstrap.pointer.Width(148)
+	bootstrapRow := v.box("", true, 12, false, bootstrap)
+	if bootstrapMode == "ip" || bootstrapMode == "protocol" {
+		example := dnsBootstrapIP
+		if bootstrapMode == "protocol" {
+			example = dnsBootstrapURL
+		}
+		v.pack(bootstrapRow, fullField("bootstrap", example, false))
+	}
+	layer("引导解析", "", bootstrapRow, v.label(
+		"解析DNS及节点服务器域名，避免循环依赖。\n带协议IP还可以填写如https://1.1.1.1/dns-query或udp://[2606:4700:4700::1111]。",
+		"help"))
+
+	addPolicy := v.button("添加DNS策略", "link icon-only icon-add", false, false, func() {
 		u.field("dnsRuleType").SetText("DOMAIN-SUFFIX")
 		u.field("dnsRuleValue").SetText("")
 		u.field("dnsRuleTarget").SetText("direct")
 		u.popup = &popup{kind: "dns-rule", title: "添加DNS策略"}
 		u.notify()
-	})), policy, v.label(help, "help"))
-	resolvers := v.box("", false, 18, false)
+	})
+	policy := v.input("dns.policy", "DOMAIN-SUFFIX,example.com,direct\nDOMAIN,blocked.example,reject", true, false, false)
+	help := v.box("", true, 8, false,
+		v.label("每行：类型,匹配内容,direct / proxy / bootstrap / reject，或者点击", "help"), addPolicy)
+	layer("解析策略", "", policy, v.box("", false, 2, false, help,
+		v.label("从上到下匹配，优先于路由文件中的域名规则。", "help")))
+
+	resolvers := v.box("", false, 12, false)
+	resolverRow := func(title string, control *widget) *widget {
+		control.pointer.Width(320)
+		slot := v.box("", false, 0, true, control)
+		slot.pointer.AlignItems(ui.Start)
+		return fieldRow(title, slot)
+	}
 	resolver := func(key, title string) {
 		current := u.field("dns." + key).Text()
 		normal := []option{{"system", "系统DNS"}, {"custom", "自定义"}}
@@ -146,8 +259,7 @@ func (v *nativeView) dnsFields(box *widget) {
 			u.prepareDNSResolver(key)
 			u.render()
 		})
-		choice.setClasses("protocol-choice")
-		card := v.box("panel", false, 12, false, v.box("", true, 16, false, v.label(title, "field-label dns-select-key"), choice))
+		v.pack(resolvers, resolverRow(title, choice))
 		if mode == "custom" {
 			protocols := []option{{"local", "System"}, {"udp", "UDP"}, {"tcp", "TCP"}, {"tls", "DoT"}, {"https", "DoH"}, {"quic", "DoQ"}, {"h3", "HTTP/3"}}
 			typ := v.selectWidget(u.field("dns."+key+"Type").Text(), protocols, false, func(value string) {
@@ -171,8 +283,10 @@ func (v *nativeView) dnsFields(box *widget) {
 				u.prepareDNSResolver(key)
 				u.render()
 			})
-			typ.setClasses("protocol-choice")
-			v.pack(card, v.box("", true, 16, false, v.label("协议", "field-label dns-select-key"), typ))
+			v.pack(resolvers, resolverRow("协议", typ))
+			if u.field("dns."+key+"Type").Text() == "local" {
+				return
+			}
 			input := v.input("dns."+key+"Server", "域名或IP，可指定端口和路径", false, false, false)
 			input.event = func(event, value string) {
 				u.field("dns." + key + "Server").SetText(value)
@@ -183,11 +297,8 @@ func (v *nativeView) dnsFields(box *widget) {
 					u.field("dns." + key).SetText(kind + "://" + value)
 				}
 			}
-			if u.field("dns."+key+"Type").Text() != "local" {
-				v.pack(card, v.box("field", false, 7, false, v.label("服务器", "field-label"), input), v.label("Bootstrap：自动使用引导DNS", "help"))
-			}
+			v.pack(resolvers, resolverRow("服务器", input), fieldRow("", v.label("Bootstrap：自动使用引导DNS", "help")))
 		}
-		v.pack(resolvers, card)
 	}
 	resolver("direct", "直连DNS")
 	resolver("proxy", "代理DNS")
@@ -202,14 +313,27 @@ func (v *nativeView) dnsFields(box *widget) {
 		}
 		route = append(route, selectField("出站节点", "proxyNode", nodes, false))
 	}
-	route = append(route, v.dnsSwitch("DNS跟随域名分流", "followRules"), v.label("根据路由中的域名及规则集自动选择直连或代理DNS。", "help"), selectField("地址策略", "strategy", []option{{"", "自动（推荐）"}, {"prefer_ipv4", "优先IPv4"}, {"prefer_ipv6", "优先IPv6"}, {"ipv4_only", "仅IPv4"}, {"ipv6_only", "仅IPv6"}}, false), v.field("dns.timeout", "查询超时（秒，1–30）", "5", false))
+	route = append(route,
+		switchField("DNS跟随域名分流", "followRules"),
+		v.label("根据路由中的域名及规则集自动选择直连或代理DNS。", "help"),
+		selectField("地址策略", "strategy", []option{{"", "自动（推荐）"}, {"prefer_ipv4", "优先IPv4"}, {"prefer_ipv6", "优先IPv6"}, {"ipv4_only", "仅IPv4"}, {"ipv6_only", "仅IPv6"}}, false),
+		fieldRow("查询超时", textField("timeout", "5"), v.label("秒，1–30", "help")))
 	layer("解析路由", "指定解析器及DNS请求出口。", route...)
 	grace := []option{{"300", "5分钟"}, {"1800", "30分钟（推荐）"}, {"3600", "1小时"}, {"86400", "1天"}}
 	currentGrace := u.field("dns.staleTTL").Text()
 	if currentGrace != "300" && currentGrace != "1800" && currentGrace != "3600" && currentGrace != "86400" {
 		grace = append(grace, option{currentGrace, currentGrace + "秒"})
 	}
-	layer("缓存与虚拟地址", "缓存解析结果；FakeIP用于TUN的A/AAAA查询。", v.dnsSwitch("DNS缓存", "cache"), v.field("dns.capacity", "缓存容量（1024–65536）", "4096", false), v.dnsSwitch("持久化DNS缓存", "persist"), v.dnsSwitch("乐观缓存", "optimistic"), selectField("过期容忍", "staleTTL", grace, false), v.dnsSwitch("FakeIP", "fakeIP"), v.field("dns.fakeIPv4", "FakeIP的IPv4范围", "198.18.0.0/15", false), v.field("dns.fakeIPv6", "FakeIP的IPv6范围", "2001:2::/48", false), v.box("field", false, 7, false, v.label("FakeIP排除域名（每行一项）", "field-label"), v.input("dns.filter", "*.lan\n*.local\nlocalhost", true, false, false)))
+	layer("缓存与虚拟地址", "缓存解析结果；FakeIP用于TUN的A/AAAA查询。",
+		switchField("DNS缓存", "cache"),
+		fieldRow("缓存容量", textField("capacity", "4096"), v.label("1024–65536", "help")),
+		switchField("持久化DNS缓存", "persist"),
+		switchField("乐观缓存", "optimistic"),
+		selectField("过期容忍", "staleTTL", grace, false),
+		switchField("FakeIP", "fakeIP"),
+		fieldRow("FakeIP的IPv4范围", fullField("fakeIPv4", "198.18.0.0/15", false)),
+		fieldRow("FakeIP的IPv6范围", fullField("fakeIPv6", "2001:2::/48", false)),
+		fieldRow("FakeIP排除域名", fullField("filter", "*.lan\n*.local\nlocalhost", true)))
 }
 func (u *UI) addDNSPolicy() {
 	kind, value, target := u.field("dnsRuleType").Text(), strings.TrimSpace(u.field("dnsRuleValue").Text()), u.field("dnsRuleTarget").Text()

@@ -67,7 +67,7 @@ func TestUDPLatencyUsesProtocolWhileConnected(t *testing.T) {
 		t.Fatal("probe disturbed active connection")
 	}
 	a.config.Settings.TestMethod = "tcp"
-	id, err := a.fastestNode(a.connectionCtx, profile.Config{Nodes: []profile.Node{n}, Settings: a.config.Settings, Selected: n.ID})
+	id, err := a.fastestNode(a.connectionCtx, profile.Config{Nodes: []profile.Node{n}, Settings: a.config.Settings, Selected: n.ID}, "")
 	if err != nil || id != n.ID {
 		t.Fatal("automatic selection skipped UDP node", id, err)
 	}

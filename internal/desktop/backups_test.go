@@ -253,7 +253,8 @@ func TestFullSettingsTransfer(t *testing.T) {
 	off, read := false, 8192
 	s := &c.Settings
 	s.Port, s.Mode, s.Language, s.Appearance = 32108, "tun", "en", "dark"
-	s.AutoSelect, s.UpdateOnStart, s.ProxyLog, s.DNSLog, s.LogRetention = true, true, true, true, 17
+	s.AutoSelectGroups = []string{"", "subscription"}
+	s.UpdateOnStart, s.ProxyLog, s.DNSLog, s.LogRetention = true, true, true, 17
 	s.RuleAutoUpdate, s.RuleUpdateDays, s.RuleRegion = &off, 6, "us"
 	s.SpeedURL, s.TestURL, s.TestTimeout, s.TestConcurrency = "https://speed.example/", "https://delay.example/test", 9, 7
 	s.Proxy = profile.ProxySettings{AllowLAN: true, Authentication: true, Username: "user", Password: "local-secret", Upstream: profile.UpstreamProxy{Enabled: true, Type: "http", Server: "proxy.example", Port: 8081, Username: "upstream", Password: "upstream-secret"}}

@@ -92,22 +92,20 @@ func (w *widget) style() {
 		}
 	case is("about-key"):
 		e.Width(132)
+	case is("dns-control"):
+		e.Width(228)
 	case is("editor-content"):
 		e.Padding(0, 14, 0, 0)
 	case is("group-row"):
 		e.MinHeight(62).Padding(9, 16).Clip()
-	case is("routing-file-row"):
+	case is("routing-file-row") || is("home-node-row"):
 		e.Refresh()
 	case is("node-row"):
-		e.MinHeight(64).Padding(11, 16).Radius(0).Clip()
-		bg := ui.Color{}
-		if is("node-selected") {
-			bg = w.selectedRowColor()
-			if is("node-last") {
-				e.Radius(15)
-			}
-		}
-		e.Background(bg)
+		e.MinHeight(listRowHeight).Padding(11, 16).Radius(0).Clip()
+	case is("node-measurement"):
+		e.Width(76).Justify(ui.End)
+	case w.kind == "icon" && w.icon == "unreachable":
+		w.iconColor = t.Danger
 	case is("search-field"):
 		e.Height(43).Padding(1, 9, 1, 10).Radius(9).Background(t.Surface).Border(t.Border)
 	case is("share-link"):
@@ -155,9 +153,6 @@ func (w *widget) style() {
 	case is("dialog-title"):
 		e.FontSize(19).Bold()
 	}
-	if is("node-delay") {
-		e.Width(76)
-	}
 	if is("compact") {
 		e.Width(110)
 	}
@@ -172,13 +167,12 @@ func (w *widget) style() {
 	}
 	switch {
 	case is("icon-only"):
-		e.Size(34, 34).Justify(ui.Center)
+		e.Size(34, 34).Justify(ui.Center).Background(ui.Color{})
 		switch {
-		case is("primary"):
-			e.Background(t.Accent).Radius(8)
-			w.iconColor = t.AccentText
 		case is("danger"):
 			w.iconColor = t.Danger
+		case is("group-auto-select") && !is("auto-select-on"):
+			w.iconColor = t.Muted
 		}
 		if !w.enabled && !w.loading && !is("rule-state") {
 			w.iconColor = t.Muted
@@ -258,7 +252,7 @@ func (w *widget) style() {
 	}
 }
 
-const routingFileRowHeight = 64
+const listRowHeight = 64
 
 func (w *widget) selectedRowColor() ui.Color {
 	if w.view.theme == "dark" {
@@ -267,13 +261,13 @@ func (w *widget) selectedRowColor() ui.Color {
 	return ui.RGB(243, 247, 253)
 }
 
-func (w *widget) paintRoutingFileSelection(p *ui.Painter) {
+func (w *widget) paintRowSelection(p *ui.Painter) {
 	if !hasClass(w.classes, "node-selected") {
 		return
 	}
 	bounds := p.Bounds()
 	first := hasClass(w.classes, "routing-file-first")
-	last := hasClass(w.classes, "routing-file-last")
+	last := hasClass(w.classes, "routing-file-last") || hasClass(w.classes, "home-node-last")
 	fill := w.selectedRowColor()
 	if !first && !last {
 		p.Rect(bounds, fill)
@@ -344,6 +338,11 @@ func (w *widget) paintLineIcon(p *ui.Painter, icon string) {
 			s, c := math.Sincos(a)
 			line(6*float32(c), 6*float32(s), 8*float32(c), 8*float32(s))
 		}
+	case "auto":
+		arc(0, 0, 6.5, math.Pi, 1.95*math.Pi)
+		path(pair(2.8, -2.8), pair(6.4, -1), pair(8, -4.7))
+		arc(0, 0, 6.5, 0, .95*math.Pi)
+		path(pair(-2.8, 2.8), pair(-6.4, 1), pair(-8, 4.7))
 	case "speed":
 		arc(0, 2, 7, math.Pi, 2*math.Pi)
 		path(pair(-7, 2), pair(-7, 5), pair(7, 5), pair(7, 2))
@@ -355,6 +354,10 @@ func (w *widget) paintLineIcon(p *ui.Painter, icon string) {
 		ring(0, 0, 7)
 		line(0, -1, 0, 4)
 		p.Circle(x, y-4, 0.8, c)
+	case "unreachable":
+		ring(0, 0, 7)
+		line(-2.5, -2.5, 2.5, 2.5)
+		line(-2.5, 2.5, 2.5, -2.5)
 	case "delete":
 		c = lanboatTheme(w.view.theme).Danger
 		if !w.enabled {
@@ -418,6 +421,13 @@ func (w *widget) paintLineIcon(p *ui.Painter, icon string) {
 		path(pair(-8, -6), pair(8, -6), pair(8, 4), pair(-8, 4), pair(-8, -6))
 		line(0, 4, 0, 7)
 		line(-4, 7, 4, 7)
+	case "network-sharing":
+		path(pair(-4, -8), pair(4, -8), pair(4, -3), pair(-4, -3), pair(-4, -8))
+		line(0, -3, 0, 0)
+		path(pair(-5, 3), pair(-5, 0), pair(5, 0), pair(5, 3))
+		for _, cx := range []float32{-5, 5} {
+			path(pair(cx-3, 3), pair(cx+3, 3), pair(cx+3, 8), pair(cx-3, 8), pair(cx-3, 3))
+		}
 	case "globe", "dns":
 		ring(0, 0, 7)
 		line(-6, 0, 6, 0)

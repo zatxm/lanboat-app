@@ -41,6 +41,25 @@ func TestImport(t *testing.T) {
 	}
 }
 
+func TestLoadMigratesLegacyAutoSelectToSelectedGroup(t *testing.T) {
+	c := Default()
+	c.Settings.LegacyAutoSelect = true
+	c.Subscriptions = []Subscription{{ID: "feed", Name: "Feed", URL: "https://example.com/feed"}}
+	c.Nodes = []Node{{ID: "node", Name: "Node", Server: "example.com", Port: 8080, Type: "http", Source: "feed"}}
+	c.Selected = "node"
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := Save(path, c); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Settings.LegacyAutoSelect || !loaded.Settings.AutoSelectEnabled("feed") || loaded.Settings.AutoSelectEnabled("") {
+		t.Fatalf("unexpected migrated groups: %v", loaded.Settings.AutoSelectGroups)
+	}
+}
+
 func TestSavePermissionsAndCorruption(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "profiles", "config.json")
 	c := Default()

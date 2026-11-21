@@ -116,7 +116,7 @@ func (v *nativeView) connectivityEditor(box *widget, speed bool) {
 			v.box("", false, 7, true, v.label("超时时长（秒）", "field-label"), v.input("testTimeout", "15", false, false, false)),
 			v.box("", false, 7, true, v.label("并发数量", "field-label"), v.input("testConcurrency", "20", false, false, false))))
 	}
-	v.pack(box, v.spacer(), v.box("", true, 10, false, v.spacer(), v.button("取消", "secondary icon-close", false, false, u.closePopup), v.button("保存", "primary icon-check", false, false, func() { u.saveConnectivity(speed) })))
+	v.dialogActions(box, func() { u.saveConnectivity(speed) })
 }
 
 func (v *nativeView) urlFields(prefix string, defaults []string) *widget {

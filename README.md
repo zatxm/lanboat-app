@@ -28,7 +28,7 @@ While Lanboat is running, use its tray icon to show the main window or quit. The
 2. Select a node and choose a **Proxy mode**. **Rules** uses your routing configuration, **Global** sends traffic through the selected node, and **Direct** connects to destinations directly.
 3. Turn on **Connect**. For apps that use a local proxy, use the address and port shown in **Settings → Proxy**.
 
-Use **Latency test** to compare nodes. **Auto** selects the lowest-latency available node when connecting. On Linux, **Global + TUN** routes system TCP and UDP traffic through Lanboat. It requires an available TUN device, the `ip` and `pkexec` commands, and system authorization.
+Use **Latency test** to compare nodes. The lightning button in each node group toggles automatic selection for that group. When connecting, Lanboat tests the group containing the selected node and uses its fastest available node if auto select is on. Turning it on for the connected group runs a test immediately. On Linux, **Global + TUN** routes system TCP and UDP traffic through Lanboat. It requires an available TUN device, the `ip` and `pkexec` commands, and system authorization.
 
 ## Routing, DNS, and logs
 

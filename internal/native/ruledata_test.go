@@ -92,7 +92,7 @@ func TestNativeWindowRuleDataSettings(t *testing.T) {
 	}
 	var save *widget
 	for _, c := range v.controls {
-		if c.widget.text == "保存" {
+		if c.widget.text == "确定" {
 			for p := c.widget; p != nil; p = p.parent {
 				if p == v.popupRoot {
 					save = c.widget
@@ -121,7 +121,7 @@ func TestNativeWindowRuleDataSettings(t *testing.T) {
 	interval.edit("7")
 	pump()
 	for _, c := range v.controls {
-		if c.widget.text == "保存" {
+		if c.widget.text == "确定" {
 			for p := c.widget; p != nil; p = p.parent {
 				if p == v.popupRoot {
 					save = c.widget

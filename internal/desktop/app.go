@@ -10,9 +10,12 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/zatxm/lanboat-app/internal/appmeta"
 	"github.com/zatxm/lanboat-app/internal/engine"
@@ -129,6 +132,7 @@ func (a *App) GetState() State {
 	defer a.mu.Unlock()
 	c := a.config
 	c.Nodes = append([]profile.Node{}, c.Nodes...)
+	c.Settings.AutoSelectGroups = slices.Clone(c.Settings.AutoSelectGroups)
 	c.Files = append([]profile.ConfigFile{}, c.Files...)
 	c.Modules = append([]profile.Module{}, c.Modules...)
 	c.Rules = append([]profile.Rule{}, c.Rules...)
@@ -318,6 +322,42 @@ func (a *App) SaveNode(n profile.Node) error {
 	return nil
 }
 
+func (a *App) CopyNode(id string) error {
+	a.connectionMu.Lock()
+	defer a.connectionMu.Unlock()
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	c := a.config
+	index := slices.IndexFunc(c.Nodes, func(n profile.Node) bool { return n.ID == id })
+	if index < 0 {
+		return errors.New("节点不存在")
+	}
+	if len(c.Nodes) >= profile.MaxNodes {
+		return errors.New("最多保存 100000 个节点")
+	}
+	names := make(map[string]bool, len(c.Nodes))
+	for _, n := range c.Nodes {
+		names[n.Name] = true
+	}
+	node := c.Nodes[index].Clone()
+	base := node.Name
+	for i := 1; ; i++ {
+		suffix := "-" + strconv.Itoa(i)
+		end := min(len(base), profile.MaxNodeNameBytes-len(suffix))
+		for end < len(base) && !utf8.RuneStart(base[end]) {
+			end--
+		}
+		node.Name = base[:end] + suffix
+		if !names[node.Name] {
+			break
+		}
+	}
+	node.ID, node.Source = profile.ID(), ""
+	c.Nodes = slices.Concat(c.Nodes, []profile.Node{node})
+	return a.commit(c)
+}
+
 func (a *App) DeleteNode(id string) error {
 	a.connectionMu.Lock()
 	defer a.connectionMu.Unlock()
@@ -367,6 +407,10 @@ func (a *App) ExportNode(id string) (string, error) {
 }
 
 func (a *App) TestNode(id string) (int64, error) {
+	return a.TestNodeContext(context.Background(), id)
+}
+
+func (a *App) TestNodeContext(ctx context.Context, id string) (int64, error) {
 	a.mu.Lock()
 	var node profile.Node
 	for _, n := range a.config.Nodes {
@@ -380,7 +424,7 @@ func (a *App) TestNode(id string) (int64, error) {
 	if node.ID == "" {
 		return 0, errors.New("节点不存在")
 	}
-	return a.testNodeContext(context.Background(), node, s)
+	return a.testNodeContext(ctx, node, s)
 }
 
 func (a *App) testNodeContext(ctx context.Context, node profile.Node, s profile.Settings) (int64, error) {
@@ -611,6 +655,7 @@ func (a *App) DeleteSubscription(id string) error {
 	if err := syncSubscriptionRules(&c, profile.Subscription{ID: id}, "", nil); err != nil {
 		return err
 	}
+	c.Settings.AutoSelectGroups = slices.DeleteFunc(slices.Clone(c.Settings.AutoSelectGroups), func(group string) bool { return group == id })
 	c.Subscriptions = []profile.Subscription{}
 	c.Nodes = []profile.Node{}
 	for _, s := range a.config.Subscriptions {
@@ -658,6 +703,8 @@ func (a *App) SaveSettings(settings profile.Settings) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	current := a.config.Settings
+	settings.AutoSelectGroups = current.AutoSelectGroups
+	settings.LegacyAutoSelect = false
 	settings.SystemProxy = false
 	settings.TestMethod = ""
 	settings.SpeedURLs = nil
@@ -717,8 +764,12 @@ func (a *App) Connect() error {
 	a.connectionError = ""
 	a.mu.Unlock()
 	var err error
-	if c.Settings.AutoSelect && c.Settings.Mode != "direct" {
-		c.Selected, err = a.fastestNode(ctx, c)
+	previousSelection := c.Selected
+	if c.Settings.Mode != "direct" {
+		group := c.SelectedNodeGroup()
+		if c.Settings.AutoSelectEnabled(group) {
+			c.Selected, err = a.fastestNode(ctx, c, group)
+		}
 	}
 	route, routeErr := profile.EffectiveRouting(c)
 	if err == nil {
@@ -736,7 +787,7 @@ func (a *App) Connect() error {
 		err = a.proxy.Enable(c.Settings.Port)
 		a.mu.Unlock()
 	}
-	if err == nil && c.Settings.AutoSelect {
+	if err == nil && c.Selected != previousSelection {
 		a.mu.Lock()
 		err = a.commit(c)
 		a.mu.Unlock()

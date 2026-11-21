@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -24,6 +25,7 @@ const MaxImport = 2 << 20
 const MaxNodes = 100000
 const MaxSubscription = 32 << 20
 const MaxConfig = 128 << 20
+const MaxNodeNameBytes = 160
 
 var Methods = []string{"none", "table", "rc4", "rc4-md5", "rc4-md5-6", "salsa20", "chacha20", "chacha20-ietf", "aes-256-cfb", "aes-192-cfb", "aes-128-cfb", "aes-256-cfb1", "aes-192-cfb1", "aes-128-cfb1", "aes-256-cfb8", "aes-192-cfb8", "aes-128-cfb8", "aes-256-ctr", "aes-192-ctr", "aes-128-ctr", "bf-cfb", "camellia-128-cfb", "camellia-192-cfb", "camellia-256-cfb", "cast5-cfb", "des-cfb", "idea-cfb", "rc2-cfb", "seed-cfb", "aes-256-gcm", "aes-192-gcm", "aes-128-gcm", "chacha20-poly1305", "chacha20-ietf-poly1305", "xchacha20-ietf-poly1305", "2022-blake3-aes-256-gcm", "2022-blake3-aes-128-gcm", "2022-blake3-chacha20-poly1305"}
 
@@ -68,31 +70,32 @@ type Subscription struct {
 }
 
 type Settings struct {
-	UDP        UDPSettings   `json:"udp,omitzero"`
-	TCP        TCPSettings   `json:"tcp,omitzero"`
-	Proxy      ProxySettings `json:"proxy,omitzero"`
-	DNS        *DNSSettings  `json:"dns,omitempty"`
-	Language   string        `json:"language,omitempty"`
-	AutoSelect bool          `json:"autoSelect,omitempty"`
-	Appearance string        `json:"appearance,omitempty"`
+	UDP              UDPSettings   `json:"udp,omitzero"`
+	TCP              TCPSettings   `json:"tcp,omitzero"`
+	Proxy            ProxySettings `json:"proxy,omitzero"`
+	DNS              *DNSSettings  `json:"dns,omitempty"`
+	Language         string        `json:"language,omitempty"`
+	AutoSelectGroups []string      `json:"autoSelectGroups,omitempty"`
+	Appearance       string        `json:"appearance,omitempty"`
 	// Legacy controls are decoded for migration, then discarded.
-	TestMethod      string   `json:"testMethod,omitempty"`
-	TestURL         string   `json:"testURL,omitempty"`
-	TestTimeout     int      `json:"testTimeout,omitempty"`
-	TestConcurrency int      `json:"testConcurrency,omitempty"`
-	SpeedURL        string   `json:"speedURL,omitempty"`
-	SpeedURLs       []string `json:"speedURLs,omitempty"`
-	TestURLs        []string `json:"testURLs,omitempty"`
-	ProxyLog        bool     `json:"proxyLog,omitempty"`
-	DNSLog          bool     `json:"dnsLog,omitempty"`
-	LogRetention    int      `json:"logRetention,omitempty"`
-	RuleAutoUpdate  *bool    `json:"ruleAutoUpdate,omitempty"`
-	RuleUpdateDays  int      `json:"ruleUpdateDays,omitempty"`
-	RuleRegion      string   `json:"ruleRegion,omitempty"`
-	UpdateOnStart   bool     `json:"updateOnStart,omitempty"`
-	Port            int      `json:"port"`
-	Mode            string   `json:"mode"`
-	SystemProxy     bool     `json:"systemProxy"`
+	LegacyAutoSelect bool     `json:"autoSelect,omitempty"`
+	TestMethod       string   `json:"testMethod,omitempty"`
+	TestURL          string   `json:"testURL,omitempty"`
+	TestTimeout      int      `json:"testTimeout,omitempty"`
+	TestConcurrency  int      `json:"testConcurrency,omitempty"`
+	SpeedURL         string   `json:"speedURL,omitempty"`
+	SpeedURLs        []string `json:"speedURLs,omitempty"`
+	TestURLs         []string `json:"testURLs,omitempty"`
+	ProxyLog         bool     `json:"proxyLog,omitempty"`
+	DNSLog           bool     `json:"dnsLog,omitempty"`
+	LogRetention     int      `json:"logRetention,omitempty"`
+	RuleAutoUpdate   *bool    `json:"ruleAutoUpdate,omitempty"`
+	RuleUpdateDays   int      `json:"ruleUpdateDays,omitempty"`
+	RuleRegion       string   `json:"ruleRegion,omitempty"`
+	UpdateOnStart    bool     `json:"updateOnStart,omitempty"`
+	Port             int      `json:"port"`
+	Mode             string   `json:"mode"`
+	SystemProxy      bool     `json:"systemProxy"`
 }
 
 type Config struct {
@@ -113,6 +116,31 @@ type Config struct {
 	Settings        Settings        `json:"settings"`
 }
 
+func (s Settings) AutoSelectEnabled(group string) bool {
+	return slices.Contains(s.AutoSelectGroups, group)
+}
+
+// An orphaned subscription node appears under local nodes.
+func (c Config) NodeGroup(n Node) string {
+	if n.Source != "" && c.HasNodeGroup(n.Source) {
+		return n.Source
+	}
+	return ""
+}
+
+func (c Config) HasNodeGroup(group string) bool {
+	return group == "" || slices.ContainsFunc(c.Subscriptions, func(sub Subscription) bool { return sub.ID == group })
+}
+
+func (c Config) SelectedNodeGroup() string {
+	for _, n := range c.Nodes {
+		if n.ID == c.Selected {
+			return c.NodeGroup(n)
+		}
+	}
+	return ""
+}
+
 func ID() string {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
@@ -126,7 +154,7 @@ func Default() Config {
 }
 
 func (n Node) Validate() error {
-	if strings.TrimSpace(n.Name) == "" || len(n.Name) > 160 {
+	if strings.TrimSpace(n.Name) == "" || len(n.Name) > MaxNodeNameBytes {
 		return errors.New("节点名称不能为空，且不能超过 160 字节")
 	}
 	if len(n.Server) > 253 || strings.TrimSpace(n.Server) != n.Server || strings.ContainsAny(n.Server, "/\\@?# \t\r\n") || n.Server == "" {
@@ -401,6 +429,17 @@ func (c *Config) ValidateSnapshot() error {
 		}
 		subs[s.ID] = true
 	}
+	var groups []string
+	for _, id := range c.Settings.AutoSelectGroups {
+		if (id == "" || subs[id]) && !slices.Contains(groups, id) {
+			groups = append(groups, id)
+		}
+	}
+	if c.Settings.LegacyAutoSelect && len(c.Settings.AutoSelectGroups) == 0 {
+		groups = []string{c.SelectedNodeGroup()}
+	}
+	c.Settings.AutoSelectGroups = groups
+	c.Settings.LegacyAutoSelect = false
 	if d := c.Settings.DNS; d != nil && d.ProxyRoute == "node" && !ids[d.ProxyNode] {
 		return errors.New("DNS出站节点不存在")
 	}

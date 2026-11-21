@@ -75,53 +75,145 @@ func TestNativeWindowDNSAndAbout(t *testing.T) {
 	if u.field("dns.bootstrap").Text() != "system" {
 		t.Fatal("DNS page defaults", u.field("dns.bootstrap").Text())
 	}
-	v.inputs["dns.bootstrap"].edit("udp://9.9.9.9")
-	button("还原默认").click()
-	pump()
-	if u.field("dns.bootstrap").Text() != "system" || u.field("dns.proxy").Text() != "auto" || u.notice != "" {
-		t.Fatal("restore DNS defaults", u.field("dns.bootstrap").Text(), u.notice)
-	}
-	v.inputs["dns.bootstrap"].edit("https://loop.invalid/dns-query")
-	u.saveDNS()
-	pump()
-	if (u.popup == nil || u.popup.kind != "message") || u.backend.GetState().Config.Settings.DNS != nil {
-		t.Fatal("invalid draft was saved")
-	}
-	u.closePopup()
-	v.inputs["dns.bootstrap"].edit("1.1.1.1")
-
-	for _, w := range v.widgets {
-		if w.kind == "select" && w.value == "auto" {
-			for _, o := range w.options {
-				if o.value == "custom" {
-					w.event("change", "custom")
-					break
+	choose := func(current, value string) {
+		t.Helper()
+		for _, w := range v.widgets {
+			if w.kind == "select" && w.value == current {
+				for _, o := range w.options {
+					if o.value == value {
+						w.edit(value)
+						pump()
+						return
+					}
 				}
 			}
 		}
+		t.Fatalf("missing selector %q with option %q", current, value)
 	}
-	pump()
-	changed := false
-	for _, w := range v.widgets {
-		if w.kind == "select" && w.value == "https" {
-			w.event("change", "tcp")
-			changed = true
-			break
+	if v.inputs["dns.bootstrap"] != nil || v.editorScroll == nil {
+		t.Fatal("system bootstrap should hide the address and DNS must scroll internally")
+	}
+	controlFillsRow := func(control *widget) {
+		t.Helper()
+		x, _, width, _ := control.bounds()
+		left, _, rowWidth, _ := control.parent.bounds()
+		if width == 0 || x+width != left+rowWidth {
+			t.Fatal("DNS control does not fill the row", control.value, x, width, left, rowWidth)
 		}
 	}
+	for _, w := range v.widgets {
+		if w.kind == "select" && w.value == "system" && len(w.options) == 4 {
+			_, _, width, _ := w.bounds()
+			_, _, rowWidth, _ := w.parent.bounds()
+			if width == 0 || width >= rowWidth {
+				t.Fatal("standalone bootstrap selector should have a compact width", width, rowWidth)
+			}
+		}
+	}
+	scroll := v.editorScroll
+	scroll.scrollPosition(250)
 	pump()
-	if !changed || u.field("dns.proxy").Text() != "tcp://1.1.1.1" {
+	if scroll.scrollPosition(-1) <= 0 || v.scroll.scrollPosition(-1) != 0 {
+		t.Fatal("DNS content should scroll independently of the page", scroll.scrollPosition(-1), v.scroll.scrollPosition(-1), scroll.pointer.Bounds(), scroll.content.Bounds())
+	}
+	scroll.scrollPosition(0)
+	pump()
+	choose("system", "local")
+	if u.field("dns.bootstrap").Text() != "local" || v.inputs["dns.bootstrap"] != nil {
+		t.Fatal("local bootstrap should hide the address")
+	}
+	choose("local", "protocol")
+	controlFillsRow(v.inputs["dns.bootstrap"])
+	v.inputs["dns.bootstrap"].edit("udp://9.9.9.9")
+	button("还原默认").click()
+	pump()
+	if u.field("dns.bootstrap").Text() != "system" || u.field("dns.proxy").Text() != "auto" || u.notice != "" || v.inputs["dns.bootstrap"] != nil {
+		t.Fatal("restore DNS defaults", u.field("dns.bootstrap").Text(), u.notice)
+	}
+	choose("system", "protocol")
+	v.inputs["dns.bootstrap"].edit("https://loop.invalid/dns-query")
+	u.saveDNS()
+	pump()
+	if u.popup == nil || u.popup.kind != "message" || u.backend.GetState().Config.Settings.DNS != nil {
+		t.Fatal("invalid draft was saved")
+	}
+	u.closePopup()
+	choose("protocol", "ip")
+	if v.inputs["dns.bootstrap"].placeholder != dnsBootstrapIP {
+		t.Fatal("missing IP example")
+	}
+	v.inputs["dns.bootstrap"].edit("udp://1.1.1.1")
+	u.saveDNS()
+	pump()
+	if u.popup == nil || u.backend.GetState().Config.Settings.DNS != nil {
+		t.Fatal("plain IP mode accepted a URL")
+	}
+	u.closePopup()
+	v.inputs["dns.bootstrap"].edit("")
+
+	choose("auto", "custom")
+	choose("https", "tcp")
+	if u.field("dns.proxy").Text() != "tcp://1.1.1.1" {
 		t.Fatal("protocol change retained an HTTP path", u.field("dns.proxy").Text())
+	}
+	proxy := v.inputs["dns.proxyServer"]
+	timeout := v.inputs["dns.timeout"]
+	px, _, pw, _ := proxy.bounds()
+	tx, _, tw, _ := timeout.bounds()
+	if px != tx || pw <= tw || tw == 0 {
+		t.Fatal("Resolver and route should share the left edge and resolver should be wider", px, pw, tx, tw)
+	}
+	_, _, available, _ := proxy.parent.bounds()
+	if pw >= available {
+		t.Fatal("resolver field took the whole column", pw, available)
+	}
+	for _, w := range v.widgets {
+		if w.kind == "select" && w.parent.parent != nil && w.parent.parent.parent == proxy.parent.parent.parent {
+			x, _, width, _ := w.bounds()
+			if x != px || width != pw {
+				t.Fatal("resolver selector and input are misaligned", x, width, px, pw)
+			}
+		}
+	}
+	for _, id := range []string{"dns.fakeIPv4", "dns.fakeIPv6", "dns.filter"} {
+		control := v.inputs[id]
+		controlFillsRow(control)
+		if bounds := control.pointer.Bounds(); bounds.X != float32(px) {
+			t.Fatal("FakeIP fields lost their common alignment", id, bounds)
+		}
+		if id == "dns.filter" {
+			for _, w := range v.widgets {
+				if w.text == "FakeIP排除域名" && w.parent.pointer.Bounds().Y != control.pointer.Bounds().Y {
+					t.Fatal("FakeIP exclusions label is not top aligned")
+				}
+			}
+		}
 	}
 	u.field("dns.proxy").SetText("auto")
 	u.prepareDNSResolver("proxy")
 	u.render()
 	pump()
-	if u.field("dns.bootstrap").Text() != "1.1.1.1" {
-		t.Fatal("resolver selection lost draft")
-	}
 
-	button("添加").click()
+	addPolicy := button("添加DNS策略")
+	var format, order *widget
+	for _, w := range v.widgets {
+		switch {
+		case w.text == "域名策略":
+			t.Fatal("redundant domain policy label")
+		case strings.HasSuffix(w.text, "或者点击"):
+			format = w
+		case strings.HasPrefix(w.text, "从上到下匹配"):
+			order = w
+		}
+	}
+	if format == nil || order == nil || format.parent != addPolicy.parent {
+		t.Fatal("missing policy format, rule order or inline add button")
+	}
+	helpBox, addBox, orderBox := format.pointer.Bounds(), addPolicy.pointer.Bounds(), order.pointer.Bounds()
+	if addBox.X <= helpBox.X+helpBox.W || orderBox.Y < addBox.Y+addBox.H || !hasClass(addPolicy.classes, "icon-only") {
+		t.Fatal("policy help is out of order or add button is misplaced")
+	}
+	addPolicy.click()
 	pump()
 	if u.popup == nil || u.popup.kind != "dns-rule" {
 		t.Fatal("policy popup")
@@ -134,7 +226,7 @@ func TestNativeWindowDNSAndAbout(t *testing.T) {
 	}
 	u.saveDNS()
 	wait()
-	if u.backend.GetState().Config.Settings.DNS == nil || u.editor != "" {
+	if saved := u.backend.GetState().Config.Settings.DNS; saved == nil || saved.Bootstrap != dnsBootstrapIP || u.editor != "" {
 		t.Fatal("DNS save")
 	}
 	u.navigate("settings")

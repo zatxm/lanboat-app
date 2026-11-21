@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
@@ -13,20 +14,34 @@ import (
 )
 
 // connectionMu keeps node tests and engine changes separate from disconnect/reconnect.
-func (a *App) SetAutoSelect(enabled bool) error {
+func (a *App) SetAutoSelect(group string, enabled bool) error {
 	a.connectionMu.Lock()
 	defer a.connectionMu.Unlock()
 	a.mu.Lock()
 	previous, ctx := a.config, a.connectionCtx
 	c := previous
-	c.Settings.AutoSelect = enabled
-	if !enabled || ctx == nil || c.Settings.Mode == "direct" || !a.engine.Connected() {
+	if !c.HasNodeGroup(group) {
+		a.mu.Unlock()
+		return errors.New("订阅不存在")
+	}
+	if c.Settings.AutoSelectEnabled(group) == enabled {
+		a.mu.Unlock()
+		return nil
+	}
+	groups := slices.Clone(c.Settings.AutoSelectGroups)
+	if enabled {
+		groups = append(groups, group)
+	} else {
+		groups = slices.DeleteFunc(groups, func(id string) bool { return id == group })
+	}
+	c.Settings.AutoSelectGroups = groups
+	if !enabled || ctx == nil || c.Settings.Mode == "direct" || c.SelectedNodeGroup() != group || !a.engine.Connected() {
 		err := a.commit(c)
 		a.mu.Unlock()
 		return err
 	}
 	a.mu.Unlock()
-	id, err := a.fastestNode(ctx, c)
+	id, err := a.fastestNode(ctx, c, group)
 	if err != nil {
 		return err
 	}
@@ -37,6 +52,10 @@ func (a *App) SetAutoSelect(enabled bool) error {
 		return a.commit(c)
 	}
 	route, err := profile.EffectiveRouting(c)
+	if err != nil {
+		return err
+	}
+	previousRoute, err := profile.EffectiveRouting(previous)
 	if err != nil {
 		return err
 	}
@@ -67,7 +86,7 @@ func (a *App) SetAutoSelect(enabled bool) error {
 		return ctx.Err()
 	}
 	// A failed candidate or save must not discard the connection that was working.
-	previous.Routing = &route
+	previous.Routing = &previousRoute
 	if restoreErr := a.engine.StartContext(ctx, previous); restoreErr != nil {
 		a.engine.Stop()
 		a.mu.Lock()
@@ -82,16 +101,12 @@ func (a *App) SetAutoSelect(enabled bool) error {
 	return fmt.Errorf("自动选择失败，已恢复原节点：%w", err)
 }
 
-func (a *App) fastestNode(parent context.Context, c profile.Config) (string, error) {
+func (a *App) fastestNode(parent context.Context, c profile.Config, group string) (string, error) {
 	ctx, cancel := context.WithTimeout(parent, 20*time.Second)
 	defer cancel()
-	results := make(map[string]int64, len(c.Nodes))
-	jobs := make(chan profile.Node, len(c.Nodes))
-	for _, n := range c.Nodes {
-		jobs <- n
-	}
-	close(jobs)
+	results := make(map[string]int64)
 	workers := c.Settings.TestWorkers()
+	jobs := make(chan profile.Node, workers)
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	for range workers {
@@ -114,10 +129,19 @@ func (a *App) fastestNode(parent context.Context, c profile.Config) (string, err
 			}
 		})
 	}
+enqueue:
+	for _, n := range c.Nodes {
+		if c.NodeGroup(n) != group {
+			continue
+		}
+		select {
+		case jobs <- n:
+		case <-ctx.Done():
+			break enqueue
+		}
+	}
+	close(jobs)
 	wg.Wait()
-	a.mu.Lock()
-	a.nodeDelays = results
-	a.mu.Unlock()
 	if err := parent.Err(); err != nil {
 		return "", err
 	}
@@ -130,6 +154,17 @@ func (a *App) fastestNode(parent context.Context, c profile.Config) (string, err
 			best, lowest = n.ID, ms
 		}
 	}
+	// Keep measurements for nodes outside this run and drop deleted IDs.
+	a.mu.Lock()
+	for _, n := range c.Nodes {
+		if ms, ok := a.nodeDelays[n.ID]; ok {
+			if _, updated := results[n.ID]; !updated {
+				results[n.ID] = ms
+			}
+		}
+	}
+	a.nodeDelays = results
+	a.mu.Unlock()
 	if best == "" {
 		return "", errors.New("没有检测成功的可用节点，请检查节点或延迟测试设置")
 	}

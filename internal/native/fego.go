@@ -62,6 +62,7 @@ type nativeView struct {
 	window                                              *fego.Window
 	compact                                             bool
 	events                                              fego.View
+	pointerRelease                                      func(fego.Event)
 	doc                                                 *ui.Document
 	tester                                              *ui.Tester
 	ui                                                  *UI
@@ -86,7 +87,7 @@ type nativeView struct {
 	totalUp                                             *widget
 	connections                                         *widget
 	uptime                                              *widget
-	nodeContainer, pagination                           *widget
+	nodeContainer, pagination, exportNodes              *widget
 	delayLabels                                         map[string]*widget
 	logContainer, logPager                              *widget
 	logSignature                                        string
@@ -135,7 +136,14 @@ func Run(backend *desktop.App, logger *zap.Logger) error {
 	}
 	v.logger = logger
 	active = v
-	defer func() { close(u.done); active = nil; v.dispose() }()
+	defer func() {
+		close(u.done)
+		if u.connectedProbe != nil {
+			u.connectedProbe()
+		}
+		active = nil
+		v.dispose()
+	}()
 	var openErr error
 	fego.App.WhenReady(func() {
 		opts := fego.WindowOptions{Title: title, Width: 1160, Height: 800, Content: display{v}}
@@ -214,6 +222,15 @@ func (w *widget) dispatch(event, value string) {
 		requestIdle()
 	}
 }
+func (w *widget) activate() {
+	if send := w.view.pointerRelease; send != nil && (hasClass(w.classes, "switch") || hasClass(w.classes, "icon-only")) {
+		// Fego 1.0.3 keeps the pointer's focus halo until focus moves.
+		// Clear mouse focus before the action can open a dialog that remembers it.
+		send(fego.Event{Kind: fego.PointerDown, X: -1, Y: -1, Button: 1})
+		send(fego.Event{Kind: fego.PointerUp, X: -1, Y: -1, Button: 1})
+	}
+	w.dispatch("click", "")
+}
 func (v *nativeView) create(kind string, p props) *widget {
 	v.next++
 	w := &widget{view: v, id: v.next, kind: kind, text: p.text, classes: p.classes, placeholder: p.placeholder, value: p.value, visible: true, enabled: !p.disabled, expand: p.expand, readonly: p.readOnly}
@@ -225,12 +242,16 @@ func (v *nativeView) create(kind string, p props) *widget {
 			w.pointer = ui.Column()
 		}
 		w.pointer.Gap(float32(p.gap))
-		if hasClass(p.classes, "routing-file-row") {
-			w.activityIcon = w.lineIcon(18).Hidden(true)
-			w.content = w.pointer.Height(routingFileRowHeight).Padding(11, 16).Clip().Append(w.activityIcon)
-			background := ui.Canvas(1, routingFileRowHeight, w.paintRoutingFileSelection)
+		routingFile := hasClass(p.classes, "routing-file-row")
+		if routingFile || hasClass(p.classes, "home-node-row") {
+			w.content = w.pointer.Height(listRowHeight).Padding(11, 16).Clip()
+			if routingFile {
+				w.activityIcon = w.lineIcon(18).Hidden(true)
+				w.content.Append(w.activityIcon)
+			}
+			background := ui.Canvas(1, listRowHeight, w.paintRowSelection)
 			// Keep the selection canvas behind the row without affecting the row height.
-			w.pointer = ui.Column(background, w.content).Gap(-routingFileRowHeight)
+			w.pointer = ui.Column(background, w.content).Gap(-listRowHeight)
 		}
 	case "scroll":
 		w.content = ui.Column().Gap(0)
@@ -267,10 +288,10 @@ func (v *nativeView) create(kind string, p props) *widget {
 		w.pointer = w.lineIcon(20)
 	case "button":
 		if strings.Contains(p.classes, "switch") {
-			w.pointer = ui.Switch("", false).OnToggle(func(bool) { w.dispatch("click", "") })
+			w.pointer = ui.Switch("", false).OnToggle(func(bool) { w.activate() })
 		} else if lineButton(p.classes) {
 			w.activityIcon = w.lineIcon(18)
-			w.pointer = ui.Row(w.activityIcon).Gap(7).Clip().OnClick(func() { w.dispatch("click", "") })
+			w.pointer = ui.Row(w.activityIcon).Gap(7).Clip().OnClick(w.activate)
 			if !hasClass(p.classes, "icon-only") {
 				w.buttonCaption = ui.Text("").Clip()
 				w.pointer.Append(w.buttonCaption)
@@ -650,13 +671,20 @@ func (d eventView) Event(e fego.Event) {
 		d.v.flush()
 		return
 	}
-	d.View.Event(e)
+	d.v.dispatchInput(e, d.View.Event)
+}
+func (v *nativeView) dispatchInput(e fego.Event, send func(fego.Event)) {
+	if e.Kind == fego.PointerUp && e.Button == 1 {
+		v.pointerRelease = send
+		defer func() { v.pointerRelease = nil }()
+	}
+	send(e)
 }
 func (v *nativeView) send(e fego.Event) {
 	if v.tester != nil {
-		v.tester.Send(e)
+		v.dispatchInput(e, v.tester.Send)
 	} else if v.events != nil {
-		v.events.Event(e)
+		v.dispatchInput(e, v.events.Event)
 	}
 }
 func (w *widget) focus() {
@@ -681,7 +709,14 @@ func (w *widget) scrollPosition(pos int) int {
 	c := w.content.Bounds()
 	old := max(0, int(r.Y-c.Y))
 	if pos >= 0 && pos != old {
-		w.view.send(fego.Event{Kind: fego.Scroll, X: r.X + r.W/2, Y: r.Y + r.H/2, DY: float32(pos - old)})
+		scale := float32(1)
+		if w.view.tester != nil {
+			scale = w.view.tester.Scale
+		} else if w.view.window != nil {
+			_, _, scale = w.view.window.Size()
+		}
+		// Dispatch in the gutter so a nested input cannot consume the scroll.
+		w.view.send(fego.Event{Kind: fego.Scroll, X: (r.X + r.W - 2) * scale, Y: (r.Y + r.H/2) * scale, DY: float32(pos-old) * scale})
 	}
 	return old
 }

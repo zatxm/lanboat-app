@@ -425,6 +425,26 @@ func TestNativeWindowHomeDeleteIconsAndLatencyScope(t *testing.T) {
 	u.state = u.backend.GetState()
 	v.render()
 	pump()
+	group := u.state.Config.Subscriptions[0].ID
+	var auto *widget
+	for _, c := range v.controls {
+		if hasClass(c.widget.classes, "group-auto-select") {
+			auto = c.widget
+			break
+		}
+	}
+	if auto == nil || auto.icon != "auto" || !hasClass(auto.parent.classes, "group-row") ||
+		!strings.Contains(auto.tooltip, "已关闭") || auto.iconColor != lanboatTheme(v.theme).Muted {
+		t.Fatal("subscription header lacks the off state and tooltip")
+	}
+	auto.click()
+	waitJob(t, u)
+	pump()
+	if !hasClass(auto.classes, "auto-select-on") || !strings.Contains(auto.tooltip, "已开启") ||
+		auto.iconColor != lanboatTheme(v.theme).Accent || !u.state.Config.Settings.AutoSelectEnabled(group) ||
+		u.state.Config.Settings.AutoSelectEnabled("") {
+		t.Fatal("enabling the subscription did not update its header independently")
+	}
 	action = nil
 	for _, c := range v.controls {
 		if c.widget.text == "删除订阅" {

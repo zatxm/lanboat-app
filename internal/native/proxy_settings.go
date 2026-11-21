@@ -73,7 +73,7 @@ func (v *nativeView) proxyPage() {
 	auth := v.settingValue("访问认证", func() string { return v.translate(onOff(s().Proxy.Authentication)) })
 	auth.update = func() { auth.setVisible(s().Proxy.AllowLAN) }
 	credentials := func() bool { return s().Proxy.AllowLAN && s().Proxy.Authentication }
-	v.settingsSummary("globe", "网络共享", func() { u.editProxy("sharing") }, v.settingValue("允许局域网设备连接", func() string { return v.translate(onOff(s().Proxy.AllowLAN)) }), auth, v.copySetting("用户", func() string { return s().Proxy.Username }, credentials), v.copySetting("密码", func() string { return s().Proxy.Password }, credentials))
+	v.settingsSummary("network-sharing", "网络共享", func() { u.editProxy("sharing") }, v.settingValue("允许局域网设备连接", func() string { return v.translate(onOff(s().Proxy.AllowLAN)) }), auth, v.copySetting("用户", func() string { return s().Proxy.Username }, credentials), v.copySetting("密码", func() string { return s().Proxy.Password }, credentials))
 	enabled := func() bool { return s().Proxy.Upstream.Enabled }
 	v.settingsSummary("route", "前置代理", func() { u.editProxy("upstream") }, v.settingValue("启用前置代理", func() string { return v.translate(onOff(enabled())) }), v.copySetting("地址", func() string {
 		p := s().Proxy.Upstream
@@ -82,13 +82,15 @@ func (v *nativeView) proxyPage() {
 }
 func (v *nativeView) proxyFields(box *widget, section string) {
 	u := v.ui
-	field := func(key, title, placeholder string, secret bool) *widget {
-		return v.field("proxy."+key, title, placeholder, secret)
+	row := func(title string, control *widget) *widget {
+		label := v.label(title, "field-label")
+		label.pointer.Width(64)
+		return v.box("", true, 12, false, label, control)
 	}
-	pair := func(left, right *widget) *widget {
-		left.setExpand(true)
-		right.setExpand(true)
-		return v.box("", true, 18, false, left, right)
+	field := func(key, title, placeholder string) *widget {
+		input := v.input("proxy."+key, placeholder, false, false, false)
+		input.setExpand(true)
+		return row(title, input)
 	}
 	switchRow := func(title, key string, conditional *widget) *widget {
 		row := v.formSwitch("proxy."+key, title)
@@ -106,9 +108,11 @@ func (v *nativeView) proxyFields(box *widget, section string) {
 	}
 	switch section {
 	case "port":
-		v.pack(box, field("port", "端口", "1024–65535", false), v.label("HTTP与SOCKS5共用此端口。", "help"))
+		v.pack(box, field("port", "端口", "1024–65535"), v.label("HTTP与SOCKS5共用此端口。", "help"))
 	case "sharing":
-		auth := v.box("option-group", false, 12, false, pair(field("username", "用户", "必填", false), field("password", "密码", "必填", false)))
+		auth := v.box("option-group", false, 12, false,
+			field("username", "用户", "必填"),
+			field("password", "密码", "必填"))
 		authGroup := v.box("", false, 14, false, switchRow("访问认证", "auth", auth), auth)
 		v.pack(box, switchRow("允许局域网设备连接", "lan", authGroup), v.label("关闭时仅本机可连接；开启后使用本机局域网IP和代理端口连接。", "help"), authGroup)
 	case "upstream":
@@ -119,10 +123,15 @@ func (v *nativeView) proxyFields(box *widget, section string) {
 			hint.setVisible(value == "http")
 			fitNativeDialog()
 		})
-		choice.setClasses("compact")
+		choice.setExpand(true)
 		v.inputs["proxy.type"] = choice
-		fields := v.box("option-group", false, 12, false, v.box("", true, 12, false, v.label("类型", "field-label"), choice), pair(field("server", "地址", "IP", false), field("upstreamPort", "端口", "1–65535", false)), pair(field("upstreamUser", "用户", "可选", false), field("upstreamPassword", "密码", "可选", false)))
-		v.pack(fields, hint)
+		fields := v.box("option-group", false, 12, false,
+			row("类型", choice),
+			field("server", "地址", "IP"),
+			field("upstreamPort", "端口", "1–65535"),
+			field("upstreamUser", "用户", "可选"),
+			field("upstreamPassword", "密码", "可选"),
+			hint)
 		v.pack(box, switchRow("启用前置代理", "upstream", fields), v.label("通过前置代理连接节点；直连流量不经过它。", "help"), fields)
 	}
 	v.dialogActions(box, func() { u.saveProxySection(section) })

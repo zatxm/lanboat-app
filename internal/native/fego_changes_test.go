@@ -287,3 +287,50 @@ func TestRoutingSelectionFollowsRoundedFrame(t *testing.T) {
 		}
 	}
 }
+
+func TestHomeNodeSelectionFillsRowCorners(t *testing.T) {
+	for _, appearance := range []string{"light", "dark"} {
+		t.Run(appearance, func(t *testing.T) {
+			u := testUI(t)
+			u.state.Config.Settings.Appearance = appearance
+			u.state.Config.Nodes = []profile.Node{
+				{ID: "first", Name: "First", Type: "ss", Server: "192.0.2.1"},
+				{ID: "middle", Name: "Middle", Type: "ss", Server: "192.0.2.2"},
+				{ID: "last", Name: "Last", Type: "hysteria2", Server: "192.0.2.3"},
+			}
+			v, err := newView(u)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer v.dispose()
+			v.render()
+			for i, node := range u.state.Config.Nodes {
+				u.state.Config.Selected = node.ID
+				v.refresh()
+				var row *widget
+				for _, c := range v.controls {
+					if hasClass(c.widget.classes, "node-selected") {
+						row = c.widget
+						break
+					}
+				}
+				if row == nil || row.text != node.Name {
+					t.Fatalf("missing selected %s row", node.Name)
+				}
+				screen := v.tester.Snapshot()
+				bounds := row.pointer.Bounds()
+				fill := row.selectedRowColor()
+				want := color.RGBA{fill.R, fill.G, fill.B, fill.A}
+				top, bottom := int(bounds.Y+2), int(bounds.Y+bounds.H-3)
+				for _, x := range []int{int(bounds.X + 2), int(bounds.X + bounds.W - 3)} {
+					if screen.RGBAAt(x, top) != want || (screen.RGBAAt(x, bottom) == want) != (i < 2) {
+						t.Fatalf("selection corners do not follow the group border for %s at x=%d", node.Name, x)
+					}
+				}
+				if screen.RGBAAt(int(bounds.X+bounds.W/2), bottom) != want {
+					t.Fatalf("selected background does not reach the bottom of %s", node.Name)
+				}
+			}
+		})
+	}
+}

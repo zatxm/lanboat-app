@@ -100,9 +100,9 @@ func TestNativeWindowAsyncAndPagination(t *testing.T) {
 	v.inputs["group.test.choice"].edit("custom")
 	pumpUI()
 	v.inputs["group.test.custom"].edit("https://example.com/latency")
-	// The dialog's Save button is distinct from the persistent page header Save.
+	// The dialog uses OK and the page header uses Save.
 	for _, c := range v.controls {
-		if c.widget.text == "保存" && c.widget != v.save {
+		if c.widget.text == "确定" && c.widget != v.save {
 			c.widget.click()
 			break
 		}

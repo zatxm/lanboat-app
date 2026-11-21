@@ -183,7 +183,7 @@ func (v *nativeView) render() {
 	}
 	v.clear(v.body)
 	v.editorScroll = nil
-	v.body.setExpand(u.editor == "node" || u.editor == "config-file" || u.editor == "config-view" || u.editor == "config-import" || u.editor == "import" || u.detail == "routing-control" || u.detail == "network-logs" || u.detail == "dns-query" || u.detail == "routing-groups" || u.page == "rules")
+	v.body.setExpand(u.editor == "node" || u.editor == "config-file" || u.editor == "config-view" || u.editor == "config-import" || u.editor == "import" || u.editor == "dns-settings" || u.detail == "routing-control" || u.detail == "network-logs" || u.detail == "dns-query" || u.detail == "routing-groups" || u.page == "rules")
 	v.controls = []control{{v.back, false, false}, {v.save, true, false}}
 	for _, row := range v.bannerRows {
 		for _, w := range v.widgets {
@@ -204,6 +204,7 @@ func (v *nativeView) render() {
 	v.power = nil
 	v.routing = nil
 	v.nodeContainer = nil
+	v.exportNodes = nil
 	v.pagination = nil
 	v.logContainer = nil
 	v.logSignature = ""
@@ -317,7 +318,8 @@ func (v *nativeView) refresh() {
 		v.routing.setOptions(modes, u.state.Config.Settings.Mode)
 	}
 	for _, c := range v.controls {
-		c.widget.setEnabled(!u.busy && !c.disabled && !(u.editor == "node" && u.nodeLocked(u.draft.ID) && c.widget != v.back && !strings.Contains(c.widget.classes, "banner-close")))
+		disabled := c.disabled || (c.widget == v.exportNodes && len(u.state.Config.Nodes) == 0)
+		c.widget.setEnabled(!u.busy && !disabled && !(u.editor == "node" && u.nodeLocked(u.draft.ID) && c.widget != v.back && !strings.Contains(c.widget.classes, "banner-close")))
 	}
 	for _, w := range v.nav {
 		w.setEnabled(!u.busy)
@@ -371,10 +373,6 @@ func (v *nativeView) refresh() {
 
 	}
 
-	for id, w := range v.delayLabels {
-		w.setText(nodeDelayText(u.delays, id))
-	}
-
 	if v.logContainer != nil {
 		v.refreshNetworkLogs()
 	}
@@ -393,23 +391,6 @@ func (v *nativeView) home() {
 	route.setClasses("compact")
 	route.setTooltip("全局+TUN 接管系统 TCP/UDP 流量；连接时可能需要系统授权，具体取决于操作系统。")
 	routing := v.box("", true, 6, false, v.label("代理模式", "field-label toolbar-label"), route)
-	autoStyle := "switch"
-	if u.state.Config.Settings.AutoSelect {
-		autoStyle += " switch-on"
-	}
-	autoLabel := v.label("自动选择", "field-label toolbar-label")
-	autoButton := v.button("自动选择", autoStyle, false, false, u.toggleAutoSelect)
-	autoButton.update = func() {
-		class := "button switch"
-		if u.state.Config.Settings.AutoSelect {
-			class += " switch-on"
-		}
-		autoButton.setClasses(class)
-	}
-	autoHint := "连接时检测并选择最低延迟节点；已连接时开启会立即检测并切换。直连模式不切换节点。"
-	autoLabel.setTooltip(autoHint)
-	autoButton.setTooltip(autoHint)
-	autoSelect := v.box("", true, 6, false, autoLabel, autoButton)
 	test := v.button("延迟测试", "link icon-only icon-test", false, false, u.testVisibleNodes)
 	test.update = func() {
 		if u.testing {
@@ -420,8 +401,9 @@ func (v *nativeView) home() {
 	}
 	importButton := v.button("导入", "link icon-only icon-upload", true, false, u.importNodes)
 	addButton := v.button("添加节点", "link icon-only icon-add", true, false, func() { u.editNode(profile.Node{Type: "subscribe"}) })
-	settings := v.box("", true, 18, false, connection, autoSelect, routing)
-	actions := v.box("", true, 8, false, v.button("测速", "link icon-only icon-speed", false, false, func() { u.openExternal(u.state.Config.Settings.SpeedTarget()) }), test, v.button("导出节点", "link icon-only icon-export", false, false, func() { u.exportData("nodes", "") }), importButton, addButton)
+	settings := v.box("", true, 18, false, connection, routing)
+	v.exportNodes = v.button("导出节点", "link icon-only icon-export", false, false, func() { u.exportData("nodes", "") })
+	actions := v.box("", true, 8, false, v.button("测速", "link icon-only icon-speed", false, false, func() { u.openExternal(u.state.Config.Settings.SpeedTarget()) }), test, v.exportNodes, importButton, addButton)
 	var nodeToolbar *widget
 	if v.compactWindow() {
 		nodeToolbar = v.box("home-toolbar", false, 8, false, settings, v.box("", true, 0, false, v.spacer(), actions))
@@ -506,6 +488,21 @@ func (v *nativeView) renderNodes() {
 			}))
 		}
 		v.pack(header, v.button("延迟检测", "link icon-only icon-test", false, count == 0, func() { u.testGroupNodes(g.ID) }))
+		const autoClass = "link icon-only icon-auto group-auto-select"
+		auto := v.button("自动选择", autoClass, true, false, func() { u.toggleAutoSelect(g.ID) })
+		auto.update = func() {
+			class, hint := "button "+autoClass, "自动选择已关闭。点击开启本组自动选择。"
+			if u.state.Config.Settings.AutoSelectEnabled(g.ID) {
+				class += " auto-select-on"
+				hint = "自动选择已开启。点击关闭本组自动选择。"
+			}
+			auto.setClasses(class)
+			if auto.tooltip != hint {
+				auto.setTooltip(hint)
+			}
+		}
+		auto.update()
+		v.pack(header, auto)
 		if g.ID != "" {
 			v.pack(header, v.button("订阅详情", "link icon-only icon-info", false, false, func() { u.openDetail("subscription:" + g.ID) }))
 			v.pack(header, v.button("分享订阅", "link icon-only icon-share", false, false, func() { u.share("subscription", g.ID, g.Name) }))
@@ -519,7 +516,7 @@ func (v *nativeView) renderNodes() {
 					continue
 				}
 				n := n
-				class := "node-row"
+				class := "node-row home-node-row"
 				selected := u.state.Config.Selected
 				if u.status.Connected && u.status.ActiveNode != "" {
 					selected = u.status.ActiveNode
@@ -527,22 +524,52 @@ func (v *nativeView) renderNodes() {
 				if n.ID == selected {
 					class += " node-selected"
 				}
-				delay := v.label(nodeDelayText(u.delays, n.ID), "help node-delay")
+				delay := v.label(nodeDelayText(u.delays, n.ID), "help")
 				v.delayLabels[n.ID] = delay
 				if n.Server != "" && !hosts[n.Server] {
 					u.flagHosts = append(u.flagHosts, n.Server)
 					hosts[n.Server] = true
 				}
 				flag := v.countryIcon(n.Server)
-				row := v.box(class, true, 8, false, flag, v.box("", false, 4, true, v.dataLabel(n.Name, "node-name node-title"), v.dataLabel(nodeDescription(n), "help")), delay, v.button("节点详情", "link icon-only icon-info", false, false, func() { u.editNode(n) }), v.button("分享节点", "link icon-only icon-share", false, false, func() { u.share("node", n.ID, n.Name) }), v.button("删除节点", "link danger icon-only icon-delete", true, false, func() { u.confirm = &deletion{kind: "node", id: n.ID, name: n.Name}; u.notify() }))
+				detail := v.button("节点详情", "link icon-only icon-info", false, false, func() { u.editNode(n) })
+				offline := v.icon("unreachable")
+				offline.setTooltip("节点连通性测试失败")
+				status := v.box("node-measurement", true, 0, false, delay, offline)
+				offline.update = func() {
+					active := u.status.Connected && u.status.ActiveNode == n.ID
+					failed := active && u.connectedDelay < 0
+					offline.setVisible(failed)
+					delay.setVisible(!failed)
+					text := nodeDelayText(u.delays, n.ID)
+					if active {
+						text = ""
+						if u.connectedDelay > 0 {
+							text = fmt.Sprintf("%dms", u.connectedDelay)
+						}
+					}
+					delay.setText(text)
+				}
+				row := v.box(class, true, 8, false, flag,
+					v.box("", false, 4, true, v.dataLabel(n.Name, "node-name node-title"), v.dataLabel(nodeDescription(n), "help")),
+					status, detail,
+					v.button("分享节点", "link icon-only icon-share", false, false, func() { u.share("node", n.ID, n.Name) }))
+				if g.ID == "" {
+					v.pack(row, v.button("复制节点", "link icon-only icon-copy", true, false, func() {
+						u.submit(func() error { return u.backend.CopyNode(n.ID) }, nil)
+					}))
+				}
+				v.pack(row, v.button("删除节点", "link danger icon-only icon-delete", true, false, func() {
+					u.confirm = &deletion{kind: "node", id: n.ID, name: n.Name}
+					u.notify()
+				}))
 				row.update = func() {
 					selected := u.state.Config.Selected
 					if u.status.Connected && u.status.ActiveNode != "" {
 						selected = u.status.ActiveNode
 					}
-					class := "node-row"
+					class := "node-row home-node-row"
 					if row == lastRow {
-						class += " node-last"
+						class += " home-node-last"
 					}
 					if selected == n.ID {
 						class += " node-selected"
@@ -645,10 +672,13 @@ func (v *nativeView) editor() *widget {
 	}
 	frame := v.box(class, false, 12, full)
 	box := frame
-	if u.editor == "node" {
+	if u.editor == "node" || u.editor == "dns-settings" {
 		v.editorScroll = v.create("scroll", props{classes: "editor-scroll", expand: true})
 		box = v.box("editor-content", false, 12, false)
 		v.pack(v.editorScroll, box)
+		if u.editor == "dns-settings" {
+			v.pack(frame, v.dnsToolbar())
+		}
 		v.pack(frame, v.editorScroll)
 	}
 	switch u.editor {

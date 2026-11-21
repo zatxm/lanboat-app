@@ -76,7 +76,7 @@ func TestNativeWindowPreferences(t *testing.T) {
 			t.Fatal("route rebuilt list")
 		}
 	}
-	u.toggleAutoSelect()
+	u.toggleAutoSelect("")
 	wait()
 	if v.next != next {
 		t.Fatal("auto select rebuilt home")

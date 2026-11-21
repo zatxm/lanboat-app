@@ -2,8 +2,17 @@ package native
 
 import (
 	"errors"
+	"io"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/zatxm/lanboat-app/internal/profile"
 )
 
 func TestNativeWindowConnectivityAndFeedback(t *testing.T) {
@@ -168,4 +177,110 @@ func TestNativeWindowLatencyUpdatesOnlyLabels(t *testing.T) {
 		t.Fatal("rule activation rebuilt the page")
 	}
 
+}
+
+func TestNativeWindowConnectedNodeLatency(t *testing.T) {
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodConnect {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		conn, rw, err := w.(http.Hijacker).Hijack()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
+		_, _ = io.WriteString(conn, "HTTP/1.1 200 Connection Established\r\n\r\n")
+		if _, err = http.ReadRequest(rw.Reader); err == nil {
+			_, _ = io.WriteString(conn, "HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n")
+		}
+	}))
+	defer proxy.Close()
+
+	u := testUI(t)
+	address, _ := url.Parse(proxy.URL)
+	port, _ := strconv.Atoi(address.Port())
+	node := profile.Node{Name: "Connected node", Type: "http", Server: address.Hostname(), Port: port}
+	if err := u.backend.SaveNode(node); err != nil {
+		t.Fatal(err)
+	}
+	node = u.backend.GetState().Config.Nodes[0]
+	if err := u.backend.SelectNode(node.ID); err != nil {
+		t.Fatal(err)
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings := u.state.Config.Settings
+	settings.Port = listener.Addr().(*net.TCPAddr).Port
+	listener.Close()
+	settings.Mode = "global"
+	settings.TestURL = "http://probe.invalid/test"
+	settings.TestTimeout = 2
+	if err = u.backend.SaveSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	u.state = u.backend.GetState()
+	v, err := newView(u)
+	if err != nil {
+		t.Fatal(err)
+	}
+	active = v
+	defer func() { active = nil; v.dispose() }()
+	v.render()
+	pump()
+
+	delay := v.delayLabels[node.ID]
+	var offline, detail *widget
+	for _, w := range v.widgets {
+		if w.icon == "unreachable" {
+			offline = w
+		}
+		if w.text == "节点详情" {
+			detail = w
+		}
+	}
+	if delay == nil || offline == nil || detail == nil {
+		t.Fatal("missing node controls")
+	}
+	waitProbe := func() {
+		t.Helper()
+		waitJob(t, u)
+		for deadline := time.Now().Add(3 * time.Second); u.connectedDelay == 0 && time.Now().Before(deadline); {
+			pump()
+			time.Sleep(time.Millisecond)
+		}
+		pump()
+		if u.err != "" || u.popup != nil || !u.status.Connected || v.delayLabels[node.ID] != delay {
+			t.Fatal("connectivity probe disturbed the connected page", u.err)
+		}
+	}
+	u.connect()
+	waitProbe()
+	x, _, width, _ := delay.bounds()
+	detailX, _, _, _ := detail.bounds()
+	if u.connectedDelay <= 0 || !strings.HasSuffix(delay.text, "ms") || offline.visible || width == 0 || x+width > detailX {
+		t.Fatal("connected delay should be visible to the left of details", delay.text)
+	}
+	u.connect()
+	waitJob(t, u)
+	pump()
+	if u.connectedDelay != 0 || delay.text != "" {
+		t.Fatal("stale connected delay after disconnect")
+	}
+
+	proxy.Close()
+	u.connect()
+	waitProbe()
+	x, _, width, _ = offline.bounds()
+	if u.connectedDelay != -1 || !offline.visible || delay.visible || offline.tooltip == "" || width == 0 || x+width > detailX {
+		t.Fatal("unreachable warning should appear to the left of details with a tooltip")
+	}
+	detail.click()
+	pump()
+	if u.editor != "node" || u.draft.ID != node.ID {
+		t.Fatal("latency status changed the details action")
+	}
 }

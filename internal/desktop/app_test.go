@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -57,6 +58,37 @@ func TestNodeSecretsAndPersistence(t *testing.T) {
 	}
 	if a.GetState().Config.Selected != "" {
 		t.Fatal("selection not cleared")
+	}
+}
+
+func TestCopyNodePreservesPrivateConfiguration(t *testing.T) {
+	a := testApp(t)
+	original := profile.Node{
+		Name: strings.Repeat("节", 53), Server: "example.com", Port: 8388,
+		Method: "aes-256-gcm", Password: "fixture",
+		Options: map[string]any{"opaque": map[string]any{"value": "fixture"}},
+	}
+	if err := a.SaveNode(original); err != nil {
+		t.Fatal(err)
+	}
+	id := a.GetState().Config.Selected
+	if err := a.CopyNode(id); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := profile.Load(a.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Nodes) != 2 || cfg.Selected != id {
+		t.Fatal("copy was not saved or changed the selection")
+	}
+	want, got := cfg.Nodes[0], cfg.Nodes[1]
+	if got.ID == "" || got.ID == id || got.Source != "" || got.Name != strings.Repeat("节", 52)+"-1" {
+		t.Fatal("copy must have a new ID and a valid suffixed name")
+	}
+	got.ID, got.Name = want.ID, want.Name
+	if !reflect.DeepEqual(got, want) {
+		t.Fatal("copy lost stored node configuration")
 	}
 }
 

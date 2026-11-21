@@ -1,6 +1,7 @@
 package native
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -72,6 +73,9 @@ type UI struct {
 	err, notice                        string
 	fields                             map[string]*field
 	delays                             map[string]int64
+	connectedProbe                     context.CancelFunc
+	connectedProbeID                   string
+	connectedDelay                     int64
 	nodePage                           int
 	updates                            chan update
 	done                               chan struct{}
@@ -227,6 +231,7 @@ func (u *UI) drain() {
 				}
 			}
 		default:
+			u.probeConnectedNode()
 			return
 		}
 	}
@@ -327,9 +332,9 @@ func (u *UI) settings(mode string) {
 	u.changeSettings(func(s *profile.Settings) { s.Mode = mode })
 }
 
-func (u *UI) toggleAutoSelect() {
-	enabled := !u.state.Config.Settings.AutoSelect
-	u.submit(func() error { return u.backend.SetAutoSelect(enabled) }, nil)
+func (u *UI) toggleAutoSelect(group string) {
+	enabled := !u.state.Config.Settings.AutoSelectEnabled(group)
+	u.submit(func() error { return u.backend.SetAutoSelect(group, enabled) }, nil)
 }
 func (u *UI) editNode(node profile.Node) {
 	if node.Kind() == "mieru" {
@@ -626,6 +631,40 @@ func (u *UI) connect() {
 		return u.backend.Connect()
 	}, nil)
 }
+func (u *UI) probeConnectedNode() {
+	if u.status.Switching {
+		return
+	}
+	id := u.status.ActiveNode
+	if !u.status.Connected {
+		id = ""
+	}
+	if id == u.connectedProbeID {
+		return
+	}
+	if u.connectedProbe != nil {
+		u.connectedProbe()
+		u.connectedProbe = nil
+	}
+	u.connectedProbeID, u.connectedDelay = id, 0
+	if id == "" {
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	u.connectedProbe = cancel
+	go func() {
+		ms, err := u.backend.TestNodeContext(ctx, id)
+		if err != nil {
+			ms = -1
+		}
+		u.post(update{background: true, apply: func() {
+			if ctx.Err() == nil && u.status.Connected && u.status.ActiveNode == id {
+				u.connectedDelay = ms
+			}
+		}})
+	}()
+}
+
 func formatBytes(value int64) string {
 	if value < 1000 {
 		return fmt.Sprintf("%d B", value)

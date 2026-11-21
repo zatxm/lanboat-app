@@ -122,13 +122,51 @@ func TestNativeWindowNetworkDataAndDNSQuery(t *testing.T) {
 	if centerDiff := 2*(by-iy) + bh - ih; centerDiff < -2 || centerDiff > 2 || bx <= ix+iw {
 		t.Fatal("DNS query controls not aligned")
 	}
-	v.inputs["dnsHost"].edit("localhost")
+	var results *widget
+	for _, w := range v.widgets {
+		if w.kind == "scroll" && w.parent == v.body {
+			results = w
+			break
+		}
+	}
+	if results == nil || results.visible {
+		t.Fatal("DNS query page shows a result before the first lookup")
+	}
+	v.inputs["dnsHost"].edit("127.0.0.1")
 	next := v.next
 	find("查询").click()
 	waitJob(t, u)
 	pump()
-	if u.result == "" || u.popup != nil || v.next != next {
-		t.Fatal("DNS query refreshed page", u.err, u.result)
+	if u.result != "127.0.0.1" || !results.visible || u.popup != nil || v.next != next {
+		t.Fatal("DNS query failed to show the result in place", u.err, u.result)
+	}
+	var card *widget
+	for _, w := range v.widgets {
+		if w.parent == results {
+			card = w
+			break
+		}
+	}
+	if card == nil {
+		t.Fatal("missing DNS result card")
+	}
+	short := card.pointer.Bounds()
+	if viewport := results.pointer.Bounds(); short.Y != viewport.Y || short.H >= viewport.H/2 {
+		t.Fatal("short DNS result is not compact and top aligned", short, viewport)
+	}
+
+	u.result = strings.Repeat("2001:db8::1\n", 80)
+	pump()
+	results.scrollPosition(250)
+	pump()
+	if card.pointer.Bounds().H <= short.H || results.scrollPosition(-1) <= 0 || v.scroll.scrollPosition(-1) != 0 {
+		t.Fatal("long DNS result does not scroll independently")
+	}
+	find("查询").click()
+	waitJob(t, u)
+	pump()
+	if card.pointer.Bounds().H != short.H || results.scrollPosition(-1) != 0 {
+		t.Fatal("a new lookup did not reset result height and scroll")
 	}
 	u.back()
 	pump()

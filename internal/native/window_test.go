@@ -8,6 +8,94 @@ import (
 	"github.com/zatxm/lanboat-app/internal/profile"
 )
 
+func TestHomeNodeExportAndCopy(t *testing.T) {
+	u := testUI(t)
+	u.notify = requestIdle
+	v, err := newView(u)
+	if err != nil {
+		t.Fatal(err)
+	}
+	active = v
+	defer func() { active = nil; v.dispose() }()
+	v.render()
+	pump()
+
+	export := v.exportNodes
+	if export == nil || export.enabled || export.iconColor != lanboatTheme(v.theme).Muted {
+		t.Fatal("export must be disabled and grey when there are no nodes")
+	}
+	finish := func() {
+		t.Helper()
+		waitJob(t, u)
+		pump()
+		if u.err != "" {
+			t.Fatal(u.err)
+		}
+	}
+	u.submit(func() error {
+		return u.backend.SaveNode(profile.Node{
+			Name: "Local", Server: "example.com", Port: 8388, Method: "aes-256-gcm", Password: "fixture",
+		})
+	}, nil)
+	finish()
+	if !export.enabled || v.exportNodes != export {
+		t.Fatal("adding the first node did not enable export in place")
+	}
+	v.inputs["search"].edit("not found")
+	if !export.enabled {
+		t.Fatal("an empty search must leave export enabled")
+	}
+	v.inputs["search"].edit("")
+
+	selected := u.state.Config.Selected
+	for _, name := range []string{"Local-1", "Local-2"} {
+		var actions []string
+		var copyButton *widget
+		for _, c := range v.controls {
+			w := c.widget
+			if w.kind == "button" && w.parent != nil && w.parent.text == "Local" {
+				actions = append(actions, w.text)
+				if w.text == "复制节点" {
+					copyButton = w
+				}
+			}
+		}
+		if copyButton == nil || strings.Join(actions, ",") != "节点详情,分享节点,复制节点,删除节点" {
+			t.Fatalf("local node actions are out of order: %v", actions)
+		}
+		copyButton.click()
+		finish()
+		nodes := u.state.Config.Nodes
+		duplicate := nodes[len(nodes)-1]
+		if duplicate.Name != name || duplicate.ID == selected || duplicate.Source != "" || u.state.Config.Selected != selected {
+			t.Fatalf("unexpected duplicate or selection for %q", name)
+		}
+	}
+
+	u.state.Config.Subscriptions = []profile.Subscription{{ID: "sub", Name: "Subscription"}}
+	u.state.Config.Nodes = u.state.Config.Nodes[:1]
+	u.state.Config.Nodes[0].Source = "sub"
+	u.expanded["sub"] = true
+	u.nodesDirty = true
+	pump()
+	var subscriptionActions []string
+	for _, c := range v.controls {
+		w := c.widget
+		if w.kind == "button" && w.parent != nil && w.parent.text == "Local" {
+			subscriptionActions = append(subscriptionActions, w.text)
+		}
+	}
+	if strings.Join(subscriptionActions, ",") != "节点详情,分享节点,删除节点" || !export.enabled {
+		t.Fatalf("subscription nodes must support export without a copy action: %v", subscriptionActions)
+	}
+
+	u.submit(u.backend.DeleteAllNodes, nil)
+	finish()
+	if export.enabled || v.exportNodes != export {
+		t.Fatal("deleting the last node did not disable export in place")
+	}
+}
+
 func TestNativeWindow(t *testing.T) {
 	u := testUI(t)
 	u.notify = requestIdle
@@ -112,7 +200,7 @@ func TestNativeWindow(t *testing.T) {
 				order = append(order, action.widget.text)
 			}
 		}
-		if strings.Join(order, ",") != "更新订阅,延迟检测,订阅详情,分享订阅,删除订阅" {
+		if strings.Join(order, ",") != "更新订阅,延迟检测,自动选择,订阅详情,分享订阅,删除订阅" {
 			t.Fatal("subscription action order", order)
 		}
 	}
@@ -211,7 +299,7 @@ func TestNativeWindow(t *testing.T) {
 	}
 	click("自动选择")
 	wait()
-	if !u.state.Config.Settings.AutoSelect || has("回退") {
+	if !u.state.Config.Settings.AutoSelectEnabled("") || has("回退") {
 		t.Fatal("automatic selection not saved or fallback remained")
 	}
 	u.delays[saved.ID] = 188

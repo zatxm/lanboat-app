@@ -27,7 +27,7 @@ func (u *UI) saveTCP() {
 }
 func (v *nativeView) tcpPage() {
 	u := v.ui
-	v.settingsSummary("tcp", "TCP", u.editTCP, v.settingValue("TLS", func() string { return "Go/uTLS" }), v.settingValue("指纹", func() string { return u.state.Config.Settings.TCP.DefaultFingerprint() }), v.settingValue("最大读取长度", func() string {
+	v.settingsSummary("tcp", "TCP", u.editTCP, v.alignedSettingValue("TLS", func() string { return "Go/uTLS" }), v.alignedSettingValue("指纹", func() string { return u.state.Config.Settings.TCP.DefaultFingerprint() }), v.alignedSettingValue("最大读取长度", func() string {
 		n := u.state.Config.Settings.TCP.ReadLimit()
 		if n == 0 {
 			return v.translate("0（不限制长度）")
@@ -44,8 +44,9 @@ func (v *nativeView) tcpEditor(box *widget) {
 	choice := func(title, key string, options []option) *widget {
 		w := v.selectWidget(u.field(key).Text(), options, false, func(value string) { u.field(key).SetText(value) })
 		v.inputs[key] = w
-		return v.box("field", false, 7, false, v.label(title, "field-label"), w)
+		w.setClasses("protocol-choice")
+		return v.alignedSetting(title, w)
 	}
-	v.pack(box, v.settingValue("TLS", func() string { return "Go/uTLS" }), choice("指纹", "tcp.fingerprint", opts), v.label("节点未指定指纹时使用此设置；节点自己的指纹设置优先。", "help"), choice("最大读取长度", "tcp.maxRead", []option{{"0", "0（不限制长度）"}, {"4096", "4096"}, {"8192", "8192"}, {"16384", "16384"}}))
+	v.pack(box, v.alignedSettingValue("TLS", func() string { return "Go/uTLS" }), choice("指纹", "tcp.fingerprint", opts), v.label("节点未指定指纹时使用此设置；节点自己的指纹设置优先。", "help"), choice("最大读取长度", "tcp.maxRead", []option{{"0", "0（不限制长度）"}, {"4096", "4096"}, {"8192", "8192"}, {"16384", "16384"}}))
 	v.dialogActions(box, u.saveTCP)
 }
