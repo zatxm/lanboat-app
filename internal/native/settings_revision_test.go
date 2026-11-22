@@ -41,8 +41,14 @@ func TestNativeWindowSettingsRevision(t *testing.T) {
 	if px, _, _, _ := button("代理").bounds(); px != dx {
 		t.Fatal("DNS and proxy rows are not aligned")
 	}
+	if u.snapshot().Memory.Processes != 0 {
+		t.Fatal("memory sampled outside About")
+	}
 	button("关于").click()
 	pump()
+	if !u.memoryVisible.Load() {
+		t.Fatal("memory sampling not enabled in About")
+	}
 	found := false
 	for _, w := range v.widgets {
 		if w.text == "内存" {
@@ -78,6 +84,9 @@ func TestNativeWindowSettingsRevision(t *testing.T) {
 	}
 	u.closePopup()
 	pump()
+	if u.memoryVisible.Load() {
+		t.Fatal("memory sampling remained enabled after closing About")
+	}
 	u.openDNS()
 	pump()
 	for _, c := range v.controls {

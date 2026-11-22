@@ -23,14 +23,15 @@ func (u *UI) fetchNetworkLogs(kind string, page int) {
 		return
 	}
 	if kind == "app" {
-		// The app log is already in memory and refreshed by every poll.
 		u.networkQuery.Store(logQuery{kind, 0})
 		u.networkPolling.Store(false)
+		u.appLogPolling.Store(true)
 		u.networkPage = traffic.Page{Kind: kind}
 		u.notify()
 		return
 	}
 	u.networkQuery.Store(logQuery{kind, page})
+	u.appLogPolling.Store(false)
 	u.networkPolling.Store(page == 0)
 	var result traffic.Page
 	u.savingSettings = true
@@ -160,7 +161,7 @@ func (v *nativeView) refreshNetworkLogs() {
 
 // refreshAppLogs lists the app's own events, newest first.
 func (v *nativeView) refreshAppLogs() {
-	logs := v.ui.logs
+	logs := v.ui.backend.GetLogs()
 	signature := "app:" + strconv.Itoa(len(logs))
 	if n := len(logs); n > 0 {
 		signature += ":" + logs[n-1].Time + logs[n-1].Message

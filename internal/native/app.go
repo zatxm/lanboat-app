@@ -30,7 +30,6 @@ type update struct {
 	version      int64
 	state        *desktop.State
 	status       desktop.Status
-	logs         []desktop.LogEntry
 	err          error
 	job          bool
 	background   bool
@@ -49,6 +48,9 @@ type UI struct {
 	flagHosts                          []string
 	networkQuery                       atomic.Value
 	networkPolling                     atomic.Bool
+	appLogPolling                      atomic.Bool
+	memoryVisible                      atomic.Bool
+	flagDeadline                       atomic.Int64
 	networkPage                        traffic.Page
 	history                            []screen
 	popup                              *popup
@@ -60,7 +62,6 @@ type UI struct {
 	backend                            *desktop.App
 	state                              desktop.State
 	status                             desktop.Status
-	logs                               []desktop.LogEntry
 	page, editor                       string
 	draft                              profile.Node
 	rule                               profile.Rule
@@ -98,7 +99,7 @@ func newUI(backend *desktop.App, notify func()) *UI {
 			u.expanded[n.Source] = true
 		}
 	}
-	u.status = backend.GetStatus()
+	u.status = backend.GetConnectionStatus()
 	u.field("port").SetText(strconv.Itoa(u.state.Config.Settings.Port))
 	return u
 }
@@ -124,21 +125,32 @@ func (u *UI) post(next update) {
 	}
 }
 func (u *UI) snapshot() desktop.Status {
+	var status desktop.Status
 	if u.traffic.Load() {
-		return u.backend.GetStatus()
+		status = u.backend.GetStatus()
+	} else {
+		status = u.backend.GetConnectionStatus()
 	}
-	return u.backend.GetConnectionStatus()
+	if u.memoryVisible.Load() {
+		status.Memory = u.backend.MemoryUsage()
+	}
+	return status
 }
 func (u *UI) poll() {
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
+	var lastStatus desktop.Status
+	var lastVersion int64 = -1
 	for {
 		select {
 		case <-u.done:
 			return
-		case <-ticker.C:
+		case now := <-ticker.C:
 			version := u.version.Load()
-			next := update{version: version, status: u.snapshot(), logs: u.backend.GetLogs()}
+			status := u.snapshot()
+			deadline := u.flagDeadline.Load()
+			flagsDue := deadline != 0 && now.UnixNano() >= deadline
+			next := update{version: version, status: status}
 			if u.networkPolling.Load() {
 				q := u.networkQuery.Load().(logQuery)
 				if p, err := u.backend.NetworkLogs(q.Kind, q.Page); err == nil {
@@ -146,6 +158,11 @@ func (u *UI) poll() {
 					next.networkQuery = q
 				}
 			}
+			if status == lastStatus && version == lastVersion && !flagsDue &&
+				next.network == nil && !u.appLogPolling.Load() && !(u.traffic.Load() && status.Connected) {
+				continue
+			}
+			lastStatus, lastVersion = status, version
 			u.post(next)
 		}
 	}
@@ -169,7 +186,6 @@ func (u *UI) submit(fn func() error, apply func()) {
 			next.state = &s
 		}
 		next.status = u.snapshot()
-		next.logs = u.backend.GetLogs()
 		u.post(next)
 	}()
 }
@@ -186,8 +202,10 @@ func (u *UI) drain() {
 			if !next.job && next.version != u.version.Load() {
 				continue
 			}
+			if next.status.Memory.Processes == 0 && u.memoryVisible.Load() {
+				next.status.Memory = u.status.Memory
+			}
 			u.status = next.status
-			u.logs = next.logs
 			if next.network != nil && u.networkPolling.Load() && next.networkQuery == u.networkQuery.Load().(logQuery) {
 				u.networkPage = *next.network
 			}

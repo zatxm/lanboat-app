@@ -11,6 +11,13 @@ import (
 	"time"
 )
 
+func TestResidentBytesUsesVmRSS(t *testing.T) {
+	status := "VmSize:\t100000 kB\nVmHWM:\t70000 kB\nVmRSS:\t   48500 kB\nRssAnon:\t18000 kB\n"
+	if got := residentBytes(status); got != 48500*1024 {
+		t.Fatalf("got %d bytes from %q", got, status)
+	}
+}
+
 func TestMemoryFindsThreadChildrenAndGrandchildren(t *testing.T) {
 	pidfile := filepath.Join(t.TempDir(), "child.pid")
 	started := make(chan *exec.Cmd)

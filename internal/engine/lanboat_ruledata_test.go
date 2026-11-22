@@ -3,7 +3,7 @@ package engine
 import (
 	"context"
 	"github.com/goccy/go-json"
-	allinone "github.com/zatxm/lanboat-allinone"
+	allinone "github.com/zatxm/lanboat-allinone/v26"
 	"net/netip"
 	"os"
 	"path/filepath"

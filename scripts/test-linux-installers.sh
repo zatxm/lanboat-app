@@ -31,8 +31,10 @@ case "$target" in
     export DEBIAN_FRONTEND=noninteractive SUDO_USER=lanboat
     apt-get update -qq
     apt-get install -y --no-install-recommends "/dist/lanboat_${version}_$arch.deb" xvfb xauth x11-utils
+    test -x /usr/libexec/lanboat-tun-worker
     user_home=/home/lanboat
     app="$user_home/.local/bin/lanboat"
+    test -x "$user_home/.local/opt/lanboat/lanboat-core"
     test "$(runuser -u lanboat -- "$app" --version)" = "$app_version"
     test -f "$user_home/.local/share/applications/lanboat.desktop"
     runuser -u lanboat -- xvfb-run -a bash -euc '
@@ -85,6 +87,8 @@ case "$target" in
     ;;
 esac
 test "$(lanboat --version)" = "$app_version"
+test -x /usr/libexec/lanboat-tun-worker
+test -x /usr/libexec/lanboat-core
 test -f /usr/share/applications/lanboat.desktop
 for dependency in ip pkexec zenity xdg-open; do
   command -v "$dependency" || { echo "$target/$arch: missing installed command $dependency" >&2; exit 1; }

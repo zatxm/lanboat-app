@@ -26,7 +26,6 @@ func TestLogTabSelectionAndEmptyPadding(t *testing.T) {
 	u.page, u.detail = "data", "network-logs"
 	v.render()
 	for _, kind := range []string{"proxy", "dns", "app", "proxy"} {
-		u.logs = nil
 		u.networkQuery.Store(logQuery{Kind: kind})
 		u.networkPage = traffic.Page{Kind: kind}
 		v.refresh()

@@ -10,7 +10,7 @@ import (
 	"net/netip"
 	"net/url"
 	"os"
-	allinone "github.com/zatxm/lanboat-allinone"
+	allinone "github.com/zatxm/lanboat-allinone/v26"
 	"path/filepath"
 	"regexp"
 	"strings"

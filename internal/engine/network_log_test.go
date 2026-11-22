@@ -10,7 +10,8 @@ import (
 	"testing"
 	"time"
 
-	allinone "github.com/zatxm/lanboat-allinone"
+	allinone "github.com/zatxm/lanboat-allinone/v26"
+	"github.com/zatxm/lanboat-app/internal/corebackend"
 	"github.com/zatxm/lanboat-app/internal/traffic"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -24,11 +25,11 @@ func TestConnectionRecordsAsynchronously(t *testing.T) {
 	now := time.Now()
 	for _, dest := range []string{"a.test:443", "b.test:443", "c.test:443"} {
 		// Opened is followed by Closed for routed connections; only the close is kept.
-		q.recordConnection(allinone.ConnectionLog{Event: allinone.ConnectionOpened, Time: now, Network: "tcp", Destination: dest, RouteOutbound: "proxy"})
-		q.recordConnection(allinone.ConnectionLog{Event: allinone.ConnectionClosed, Time: now, Network: "tcp", Destination: dest, RouteOutbound: "policy-group-HK", Outbound: "policy-node-1", Rule: "domain_suffix=test", Elapsed: 4200 * time.Millisecond, Upload: 10, Download: 20, ProcessPath: "/usr/bin/curl"})
+		recordConnection(q, allinone.ConnectionLog{Event: allinone.ConnectionOpened, Time: now, Network: "tcp", Destination: dest, RouteOutbound: "proxy"})
+		recordConnection(q, allinone.ConnectionLog{Event: allinone.ConnectionClosed, Time: now, Network: "tcp", Destination: dest, RouteOutbound: "policy-group-HK", Outbound: "policy-node-1", Rule: "domain_suffix=test", Elapsed: 4200 * time.Millisecond, Upload: 10, Download: 20, ProcessPath: "/usr/bin/curl"})
 	}
-	q.recordConnection(allinone.ConnectionLog{Event: allinone.ConnectionFailed, Time: now, Destination: "d.test:443", RouteOutbound: "REJECT", Outbound: "REJECT", Rule: "domain=d.test", Error: errors.New("connection rejected by routing policy")})
-	q.recordConnection(allinone.ConnectionLog{Event: allinone.ConnectionFailed, Time: now, Destination: "e.test:443", RouteOutbound: "proxy", Error: context.Canceled})
+	recordConnection(q, allinone.ConnectionLog{Event: allinone.ConnectionFailed, Time: now, Destination: "d.test:443", RouteOutbound: "REJECT", Outbound: "REJECT", Rule: "domain=d.test", Error: errors.New("connection rejected by routing policy")})
+	recordConnection(q, allinone.ConnectionLog{Event: allinone.ConnectionFailed, Time: now, Destination: "e.test:443", RouteOutbound: "proxy", Error: context.Canceled})
 	// Closing waits for queued records, as engine cleanup does after the runtime stops.
 	q.close()
 	p, err := store.Page("proxy", 0)
@@ -99,7 +100,11 @@ func TestRuntimeConnectionRecordsCarryTraffic(t *testing.T) {
 	store := traffic.New(t.TempDir())
 	store.SetEnabled(true, false)
 	q := newTrafficQueue(store, zap.NewNop())
-	runtime.SetConnectionLogger(q.recordConnection, true)
+	runtime.SetConnectionLogger(func(c allinone.ConnectionLog) {
+		if entry, ok := corebackend.ConnectionEntry(c); ok {
+			q.push(entry)
+		}
+	}, true)
 	conn, err := runtime.Dial(context.Background(), "tcp", echo.Addr().String())
 	if err != nil {
 		t.Fatal(err)
@@ -119,5 +124,13 @@ func TestRuntimeConnectionRecordsCarryTraffic(t *testing.T) {
 	}
 	if e := p.Entries[0]; e.URL != echo.Addr().String() || e.Upload != 5 || e.Download != 5 || e.Rule != "ip_cidr=127.0.0.0/8" || e.Policy != "direct" {
 		t.Fatal(e)
+	}
+}
+
+func recordConnection(q *trafficQueue, c allinone.ConnectionLog) {
+	if q.store.Enabled("proxy") {
+		if entry, ok := corebackend.ConnectionEntry(c); ok {
+			q.push(entry)
+		}
 	}
 }

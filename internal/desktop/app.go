@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime/debug"
 	"slices"
 	"strconv"
 	"strings"
@@ -199,8 +200,10 @@ func (a *App) status(traffic bool) Status {
 	if a.connectionError != "" {
 		s.Error = a.connectionError
 	}
-	return Status{Status: s, Memory: ProcessMemory(os.Getpid()), ActiveNode: a.activeNode, Switching: switching}
+	return Status{Status: s, ActiveNode: a.activeNode, Switching: switching}
 }
+
+func (a *App) MemoryUsage() Memory { return ProcessMemory(os.Getpid()) }
 
 func (a *App) GetLogs() []LogEntry { return a.logs.List() }
 
@@ -820,6 +823,7 @@ func (a *App) Connect() error {
 	}
 	a.switching = false
 	a.mu.Unlock()
+	go debug.FreeOSMemory()
 	return nil
 }
 
@@ -828,6 +832,7 @@ func (a *App) Disconnect() error {
 	connected := a.connectionCancel != nil
 	if connected {
 		a.connectionCancel()
+		defer debug.FreeOSMemory()
 	}
 	a.mu.Unlock()
 	a.connectionMu.Lock()

@@ -4,7 +4,7 @@ AppName=Lanboat
 AppVersion={#Version}
 DefaultDirName={localappdata}\Programs\Lanboat
 DisableDirPage=no
-PrivilegesRequired=lowest
+PrivilegesRequired=admin
 ArchitecturesAllowed={#Architecture}
 ArchitecturesInstallIn64BitMode={#Architecture}
 OutputDir=..\..\dist
@@ -16,6 +16,10 @@ UninstallDisplayIcon={app}\lanboat.ico
 [Files]
 Source: "lanboat.ico"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\build\bin\Lanboat.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\..\build\bin\lanboat-core.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\..\build\bin\lanboat-tun-worker.exe"; DestDir: "{commonpf}\Lanboat\TUN"; Flags: ignoreversion
+Source: "..\..\build\bin\wintun.dll"; DestDir: "{commonpf}\Lanboat\TUN"; Flags: ignoreversion
+Source: "..\..\build\bin\wintun-LICENSE.txt"; DestDir: "{commonpf}\Lanboat\TUN"; Flags: ignoreversion
 Source: "..\..\build\notices\*"; DestDir: "{app}\notices"; Flags: recursesubdirs
 [Icons]
 Name: "{userprograms}\Lanboat"; Filename: "{app}\Lanboat.exe"; IconFilename: "{app}\lanboat.ico"; AppUserModelID: "org.lanboat.desktop"

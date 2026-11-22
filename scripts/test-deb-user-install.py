@@ -22,7 +22,7 @@ with tempfile.TemporaryDirectory(prefix='lanboat-deb-user-') as temporary:
     (payload/'licenses').mkdir()
     (payload/'licenses/fixture.txt').write_text('license version 1\n')
     (payload/'licenses/fixture.txt').chmod(0o444)
-    binaries = ('lanboat',)
+    binaries = ('lanboat', 'lanboat-core')
     for name in (*binaries, 'COPYING.fixture', 'README.md', 'README.zh-CN.md', 'THIRD_PARTY.md', 'LICENSE'):
         (payload/name).write_text('fixture version 1\n')
     desktop_home = work/'Desktop User'
@@ -111,13 +111,16 @@ exec "$@"
         package = Path(sys.argv[1]).resolve()
         process = subprocess.Popen(['dpkg-deb', '--fsys-tarfile', str(package)], stdout=subprocess.PIPE)
         with tarfile.open(fileobj=process.stdout, mode='r|') as archive:
-            names = {member.name.removeprefix('./') for member in archive if member.isfile() or member.issym()}
+            members = {member.name.removeprefix('./'): member for member in archive if member.isfile() or member.issym()}
+        names = members.keys()
+        helper = members['usr/libexec/lanboat-tun-worker']
+        assert helper.isfile() and helper.uid == 0 and helper.mode == 0o755
         process.stdout.close()
         assert process.wait() == 0
-        for name in ('lanboat', 'README.md', 'README.zh-CN.md'):
+        for name in ('lanboat', 'lanboat-core', 'README.md', 'README.zh-CN.md'):
             assert f'usr/share/lanboat/{name}' in names
         assert not any(Path(name).name in ('sing-box','sing-box-vpn','lanboat-tun','libcronet.so') for name in names)
-        assert all(name.startswith('usr/share/lanboat/') for name in names)
+        assert all(name.startswith('usr/share/lanboat/') or name == 'usr/libexec/lanboat-tun-worker' for name in names)
         control = work/'control'
         subprocess.run(['dpkg-deb', '--control', str(package), str(control)], check=True)
         for name in hooks:

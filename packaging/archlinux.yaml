@@ -20,6 +20,14 @@ contents:
     dst: /usr/bin/lanboat
     file_info:
       mode: 0755
+  - src: build/bin/lanboat-core
+    dst: /usr/libexec/lanboat-core
+    file_info:
+      mode: 0755
+  - src: build/bin/lanboat-tun-worker
+    dst: /usr/libexec/lanboat-tun-worker
+    file_info:
+      mode: 0755
   - src: packaging/lanboat.desktop
     dst: /usr/share/applications/lanboat.desktop
   - src: packaging/lanboat.svg

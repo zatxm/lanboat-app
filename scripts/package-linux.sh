@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
-export GOWORK=off
 version=${LANBOAT_VERSION:-1.0.0}
 if [[ ${LANBOAT_PACKAGE_PREBUILT:-0} == 1 ]]; then
   arch=${ARCH:?missing target architecture}
@@ -16,7 +15,7 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 name="lanboat-$version-linux-$arch"
 mkdir -p "$tmp/$name"
-install -m 755 build/bin/lanboat packaging/install.sh packaging/uninstall.sh "$tmp/$name/"
+install -m 755 build/bin/lanboat build/bin/lanboat-core packaging/install.sh packaging/uninstall.sh "$tmp/$name/"
 install -m 644 packaging/lanboat.svg README.md README.zh-CN.md THIRD_PARTY.md LICENSE "$tmp/$name/"
 cp -R packaging/icons "$tmp/$name/icons"
 mkdir -p "$tmp/$name/licenses"
@@ -29,6 +28,7 @@ if command -v dpkg-deb >/dev/null; then
   root="$tmp/deb"
   mkdir -p "$root/DEBIAN" "$root/usr/share/lanboat"
   cp -R "$tmp/$name/." "$root/usr/share/lanboat/"
+  install -Dm755 build/bin/lanboat-tun-worker "$root/usr/libexec/lanboat-tun-worker"
   install -m 755 packaging/deb/postinst packaging/deb/prerm packaging/deb/postrm "$root/DEBIAN/"
   cat > "$root/DEBIAN/control" <<EOF
 Package: lanboat

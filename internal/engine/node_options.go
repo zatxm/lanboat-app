@@ -5,8 +5,9 @@ import (
 	"github.com/goccy/go-json"
 	"strings"
 
-	allinone "github.com/zatxm/lanboat-allinone"
+	"github.com/zatxm/lanboat-app/internal/coreipc"
 	"github.com/zatxm/lanboat-app/internal/profile"
+	"time"
 )
 
 func tlsFingerprint(value string) (string, error) {
@@ -23,7 +24,14 @@ func nodeConnectionIssue(n profile.Node) error {
 	if err != nil {
 		return err
 	}
-	return allinone.Check(context.Background(), raw)
+	program, err := coreipc.Executable(FindCore())
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	_, err = coreipc.RunCommand(ctx, program, coreipc.Request{Op: "check", Config: raw})
+	return err
 }
 func NodeOptionsIssue(n profile.Node) string {
 	if err := nodeConnectionIssue(n); err != nil {

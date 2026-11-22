@@ -35,8 +35,8 @@ github.com/xyproto/randomstring v1.0.5 h1:YtlWPoRdgMu3NZtP45drfy1GKoojuR7hmRcnhZ
 github.com/xyproto/randomstring v1.0.5/go.mod h1:rgmS5DeNXLivK7YprL0pY+lTuhNQW3iGxZ18UQApw/E=
 github.com/zatxm/fego/v26 v26.1122.113620 h1:CMezPQSDg8n77N/yCeQPSMvi0l2SM2y8ySzaYOXG0h4=
 github.com/zatxm/fego/v26 v26.1122.113620/go.mod h1:kgZtcnk8Rt1r4nAVmkPMSyxEiu67+x6jNvQqpcnj9lE=
-github.com/zatxm/lanboat-allinone v1.0.8 h1:Q6jEShUJ3PGsNni+2MAy/q5gJgD0hXAoIWXTI0pqzsE=
-github.com/zatxm/lanboat-allinone v1.0.8/go.mod h1:BIjLVVOQGUlVZTbm1SSQ+oSrx2bR1MG88hPco/7pCsE=
+github.com/zatxm/lanboat-allinone/v26 v26.1122.170450 h1:b+j2Sp5JURiXkFuxiQeNxXfkjb+kZoGj57crZpKt0oI=
+github.com/zatxm/lanboat-allinone/v26 v26.1122.170450/go.mod h1:/f7J3o21jMM0UPDkUgtpxfUhfkEfqLKlvZJMr5ASElI=
 github.com/zatxm/lumberjack/v2 v2.0.0 h1:jkEzI9mqaALbjdz+3tgqCFc5bXS+gKjAqj8dZN51Grk=
 github.com/zatxm/lumberjack/v2 v2.0.0/go.mod h1:pwBzpPgMu47vn2Brny4PjzxGIWmVe28iGjHAtnq58SU=
 go.uber.org/goleak v1.3.0 h1:2K3zAYmnTNqV73imy9J1T3WC+gmCePx2hEGkimedGto=

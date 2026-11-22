@@ -11,10 +11,11 @@ import (
 	"sync"
 	"time"
 
-	allinone "github.com/zatxm/lanboat-allinone"
+	"github.com/zatxm/lanboat-app/internal/coreipc"
 	"github.com/zatxm/lanboat-app/internal/profile"
 	"github.com/zatxm/lanboat-app/internal/routing"
 	"github.com/zatxm/lanboat-app/internal/traffic"
+	"github.com/zatxm/lanboat-app/internal/tunmode"
 	"go.uber.org/zap"
 )
 
@@ -32,7 +33,7 @@ type Status struct {
 
 type Engine struct {
 	mu      sync.Mutex
-	runtime *allinone.Runtime
+	runtime *coreipc.Client
 	cancel  context.CancelFunc
 
 	traffic                    *traffic.Store
@@ -40,13 +41,11 @@ type Engine struct {
 	dnsPorts                   []int
 	dnsServers                 []any
 	dnsConfig                  profile.Config
-	tun                        *tunSession
 	fallbackGroups             []fallbackGroup
 	fallbackReservations       []net.Listener
 	front                      *proxyFront
 	path, dir, control, secret string
 	done                       chan struct{}
-	tunDNSPort                 int
 	status                     Status
 	lastSample                 time.Time
 	log                        *zap.Logger
@@ -174,14 +173,12 @@ func (e *Engine) StartContext(ctx context.Context, c profile.Config) error {
 		return err
 	}
 	if c.Settings.Mode == "tun" {
-		e.tunDNSPort, err = reserve()
-		if err != nil {
-			return err
-		}
-		config["inbounds"] = append(config["inbounds"].([]any), map[string]any{"type": "direct", "tag": "tun-in", "listen": "127.0.0.1", "listen_port": e.tunDNSPort, "network": "tcp"})
+		config["inbounds"] = append(config["inbounds"].([]any), tunmode.Inbound(c.Settings.UDP.Seconds()))
 		route := config["route"].(map[string]any)
-		route["rules"] = append([]any{map[string]any{"inbound": []string{"tun-in"}, "action": "hijack-dns"}}, route["rules"].([]any)...)
+		route["rules"] = append([]any{map[string]any{"inbound": []string{"tun-in"}, "port": []int{53}, "action": "hijack-dns"}}, route["rules"].([]any)...)
+		route["auto_detect_interface"] = true
 	}
+
 	ports, release, err := configureDNSChecks(config)
 	if err != nil {
 		return err
@@ -196,25 +193,26 @@ func (e *Engine) StartContext(ctx context.Context, c profile.Config) error {
 	e.cancel = cancel
 	stopStartup := context.AfterFunc(ctx, cancel)
 	defer stopStartup()
-	runtime, err := allinone.NewWithLogger(runCtx, raw, zap.NewNop())
+	program, err := coreipc.Executable(e.path)
+	if err != nil {
+		return err
+	}
+	var record func(traffic.Entry)
+	if e.traffic != nil {
+		e.trafficQueue = newTrafficQueue(e.traffic, e.log)
+		record = e.trafficQueue.push
+	}
+	release()
+	releaseReservations()
+	startup, cancelStartup := context.WithTimeout(runCtx, 100*time.Second)
+	defer cancelStartup()
+	runtime, err := coreipc.Launch(startup, program, coreipc.Request{
+		Op: "start", Config: raw, TUN: c.Settings.Mode == "tun", Logging: e.logging(c.Settings.ProxyLog),
+	}, record)
 	if err != nil {
 		return err
 	}
 	e.runtime = runtime
-	if e.trafficQueue != nil {
-		e.trafficQueue.close()
-		e.trafficQueue = nil
-	}
-	if e.traffic != nil {
-		e.trafficQueue = newTrafficQueue(e.traffic, e.log)
-	}
-	e.configureRequestLog(c.Settings.ProxyLog)
-	release()
-	releaseReservations()
-	if err = runtime.Start(); err != nil {
-		e.cleanup()
-		return err
-	}
 	e.control = runtime.ControllerAddress()
 	e.done = make(chan struct{})
 	for _, group := range e.fallbackGroups {
@@ -230,16 +228,7 @@ func (e *Engine) StartContext(ctx context.Context, c profile.Config) error {
 			return err
 		}
 	}
-	if c.Settings.Mode == "tun" {
-		// The privileged worker reaches the same authenticated mixed listener.
-		if useFront {
-			c.Settings.Port = publicPort
-		}
-		if err = e.startTUN(ctx, c); err != nil {
-			e.cleanup()
-			return err
-		}
-	}
+
 	stopStartup()
 	if err = ctx.Err(); err != nil {
 		return err
@@ -254,7 +243,6 @@ func (e *Engine) cleanup() {
 		e.cancel()
 		e.cancel = nil
 	}
-	e.stopTUN()
 	if e.done != nil {
 		close(e.done)
 		e.done = nil
@@ -275,6 +263,7 @@ func (e *Engine) cleanup() {
 	}
 	e.dnsPorts = nil
 	e.dnsServers = nil
+	e.dnsConfig = profile.Config{}
 }
 func (e *Engine) Stop() {
 	e.mu.Lock()
@@ -297,7 +286,13 @@ func (e *Engine) Snapshot() Status {
 		e.status.CoreAvailable = true
 		return e.status
 	}
-	stats := e.runtime.Stats()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	response, err := e.runtime.Call(ctx, coreipc.Request{Op: "stats"})
+	if err != nil || response.Stats == nil {
+		return e.status
+	}
+	stats := response.Stats
 	now := time.Now()
 	elapsed := now.Sub(e.lastSample).Seconds()
 	up, down := int64(stats.Uplink), int64(stats.Downlink)
@@ -322,18 +317,16 @@ func (e *Engine) connected() bool {
 	if e.runtime == nil {
 		return false
 	}
-	if e.tun != nil {
-		select {
-		case <-e.tun.done:
-			message := "TUN会话意外结束"
-			if e.tun.err != nil {
-				message += "：" + e.tun.err.Error()
-			}
-			e.cleanup()
-			e.status = Status{CoreAvailable: true, Error: message}
-			return false
-		default:
+	select {
+	case <-e.runtime.Done():
+		message := "Lanboat网络后端已退出"
+		if err := e.runtime.Err(); err != nil {
+			message += "：" + err.Error()
 		}
+		e.cleanup()
+		e.status = Status{CoreAvailable: true, Error: message}
+		return false
+	default:
 	}
 	return true
 }

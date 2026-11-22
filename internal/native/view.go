@@ -2,7 +2,6 @@ package native
 
 import (
 	"fmt"
-	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -15,12 +14,6 @@ const linuxWindowTitle = "⛵︎ Lanboat"
 
 var pages = []option{{"home", "首页"}, {"data", "数据"}, {"settings", "设置"}}
 var modes = []option{{"rule", "规则"}, {"global", "全局"}, {"tun", "全局+TUN"}, {"direct", "直连"}}
-
-func init() {
-	if runtime.GOOS != "linux" {
-		modes = slices.DeleteFunc(modes, func(o option) bool { return o.value == "tun" })
-	}
-}
 
 var ruleTypes = func() []option {
 	opts := make([]option, 0, len(routingTypes))
@@ -173,7 +166,10 @@ func (u *UI) chooseProtocol(kind string) {
 func (v *nativeView) render() {
 	u := v.ui
 	u.traffic.Store(u.page == "data" && u.detail == "" && u.editor == "")
-	u.networkPolling.Store(u.detail == "network-logs" && u.networkQuery.Load().(logQuery).Page == 0)
+	query := u.networkQuery.Load().(logQuery)
+	showLogs := u.detail == "network-logs" && u.editor == ""
+	u.appLogPolling.Store(showLogs && query.Kind == "app")
+	u.networkPolling.Store(showLogs && query.Kind != "app" && query.Page == 0)
 	v.applyTheme()
 	u.dirty = false
 	u.nodesDirty = false
@@ -330,15 +326,7 @@ func (v *nativeView) refresh() {
 			w.setEnabled(false)
 		}
 	}
-	if v.nodeContainer != nil && !u.flagsBusy {
-		var pending []string
-		for _, host := range u.flagHosts {
-			if !u.flags[host].until.After(time.Now()) {
-				pending = append(pending, host)
-			}
-		}
-		u.loadFlags(pending)
-	}
+	u.refreshFlags(v.nodeContainer != nil)
 	if v.power != nil {
 		v.power.setEnabled(!u.busy && (u.status.Connected || u.state.Config.Selected != "" || u.state.Config.Settings.Mode == "direct"))
 		power := "开启连接"
@@ -452,16 +440,19 @@ func (v *nativeView) renderNodes() {
 		sources[s.ID] = true
 	}
 	local := func(n profile.Node) bool { return n.Source == "" || !sources[n.Source] }
+	counts := make(map[string]int, len(sources)+1)
+	for _, n := range nodes {
+		if local(n) {
+			counts[""]++
+		} else {
+			counts[n.Source]++
+		}
+	}
 	groups := []profile.Subscription{{ID: "", Name: "本地节点"}}
 	groups = append(groups, u.state.Config.Subscriptions...)
 	for _, group := range groups {
 		g := group
-		count := 0
-		for _, n := range nodes {
-			if n.Source == g.ID || g.ID == "" && local(n) {
-				count++
-			}
-		}
+		count := counts[g.ID]
 		if g.ID == "" && count == 0 {
 			continue
 		}

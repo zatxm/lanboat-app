@@ -114,6 +114,7 @@ func (v *nativeView) syncPopup() {
 			v.popupError = nil
 		}
 		v.popupShown = u.popup
+		u.memoryVisible.Store(u.popup != nil && u.popup.kind == "about")
 		if u.popup == nil {
 			v.doc.CloseDialog()
 		} else {
@@ -166,6 +167,7 @@ func (v *nativeView) syncPopup() {
 				v.popupError.setVisible(false)
 				v.pack(box, v.popupError)
 			} else if p.kind == "about" {
+				u.status.Memory = u.backend.MemoryUsage()
 				width, height = 560, 400
 				row := func(label string, values ...*widget) {
 					key := v.box("about-key", true, 0, false, v.spacer(), v.label(label, "field-label"))

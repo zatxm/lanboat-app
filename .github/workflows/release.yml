@@ -43,7 +43,7 @@ jobs:
         if: matrix.platform == 'Linux' && matrix.arch == 'amd64'
         run: go test -mod=readonly ./...
       - name: Install UPX
-        if: matrix.platform != 'macOS'
+        if: matrix.platform == 'Windows'
         run: |
           curl -fsSL --retry 3 https://github.com/upx/upx/releases/download/v5.3.0/upx-5.3.0-amd64_linux.tar.xz -o "$RUNNER_TEMP/upx.tar.xz"
           echo '79cea8a50b6fa102d10c7b79a419cd77dead3cc2d78661de2dc5e5815dc505c1  '"$RUNNER_TEMP/upx.tar.xz" | sha256sum -c -
@@ -103,7 +103,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y rpm
-          chmod +x build/bin/Lanboat
+          chmod +x build/bin/Lanboat build/bin/lanboat-core build/bin/lanboat-tun-worker
           test "$(build/bin/Lanboat --version)" = "$LANBOAT_APP_VERSION"
           mv build/bin/Lanboat build/bin/lanboat
           LANBOAT_PACKAGE_PREBUILT=1 bash scripts/package-linux.sh
@@ -140,6 +140,13 @@ jobs:
           $p = Start-Process $compilerSetup -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CURRENTUSER /DIR=`"$compiler`"" -PassThru -Wait
           if ($p.ExitCode) { throw "Inno Setup installation failed ($($p.ExitCode))" }
           $iscc = Join-Path $compiler 'ISCC.exe'
+          $driverArchive = Join-Path $env:RUNNER_TEMP 'wintun.zip'
+          Invoke-WebRequest 'https://www.wintun.net/builds/wintun-0.14.1.zip' -OutFile $driverArchive
+          if ((Get-FileHash $driverArchive).Hash -ne '07c256185d6ee3652e09fa55c0b673e2624b565e02c4b9091c79ca7d2f24ef51') { throw 'Wintun checksum mismatch' }
+          $drivers = Join-Path $env:RUNNER_TEMP 'wintun'
+          Expand-Archive $driverArchive -DestinationPath $drivers
+          Copy-Item "$drivers/wintun/bin/$env:CPU/wintun.dll" build/bin/wintun.dll
+          Copy-Item "$drivers/wintun/LICENSE.txt" build/bin/wintun-LICENSE.txt
           & $iscc "/DVersion=$env:LANBOAT_VERSION" "/DArchitecture=$arch" "/DCPU=$env:CPU" packaging/windows/lanboat.iss
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           $setup = (Get-ChildItem dist/*-setup.exe).FullName
@@ -149,6 +156,9 @@ jobs:
           if ($p.ExitCode -ne 0) { throw "Installer failed ($($p.ExitCode))" }
           $saved = Get-ItemPropertyValue -Path HKCU:\Software\Lanboat -Name DataDir
           if ($saved -ne $data) { throw "Installer did not save chosen data path" }
+          if (!(Test-Path "$install/lanboat-core.exe") -or !(Test-Path "$env:ProgramFiles/Lanboat/TUN/wintun.dll")) {
+            throw 'Missing network backend or Wintun driver'
+          }
           $binary = Join-Path $install 'Lanboat.exe'
           $versionFile = Join-Path $env:RUNNER_TEMP 'lanboat-version.txt'
           $probe = Start-Process $binary -ArgumentList '--version' -RedirectStandardOutput $versionFile -PassThru -Wait
@@ -165,7 +175,7 @@ jobs:
         env:
           ARCH: ${{ matrix.arch }}
         run: |
-          chmod +x build/bin/Lanboat
+          chmod +x build/bin/Lanboat build/bin/lanboat-core build/bin/lanboat-tun-worker
           test "$(build/bin/Lanboat --version)" = "$LANBOAT_APP_VERSION"
           bash packaging/macos/package.sh "$ARCH"
       - name: Test macOS installer
@@ -179,6 +189,8 @@ jobs:
           app=/Applications/Lanboat.app
           codesign --verify --strict "$app"
           test "$(lipo -archs "$app/Contents/MacOS/Lanboat")" = "$machine"
+          test -x "$app/Contents/MacOS/lanboat-core"
+          test -x /Library/PrivilegedHelperTools/org.lanboat.tun
           test "$("$app/Contents/MacOS/Lanboat" --version)" = "$LANBOAT_APP_VERSION"
       - uses: actions/upload-artifact@v6
         with:

@@ -11,12 +11,16 @@ Requires: /usr/bin/pkexec
 Desktop client for proxy connections, DNS and routing.
 %install
 install -Dm755 %{app_root}/build/bin/lanboat %{buildroot}/usr/bin/lanboat
+install -Dm755 %{app_root}/build/bin/lanboat-core %{buildroot}/usr/libexec/lanboat-core
+install -Dm755 %{app_root}/build/bin/lanboat-tun-worker %{buildroot}/usr/libexec/lanboat-tun-worker
 install -Dm644 %{app_root}/packaging/lanboat.desktop %{buildroot}/usr/share/applications/lanboat.desktop
 install -Dm644 %{app_root}/packaging/lanboat.svg %{buildroot}/usr/share/icons/hicolor/scalable/apps/lanboat.svg
 mkdir -p %{buildroot}/usr/share/doc/lanboat
 cp -r %{app_root}/build/notices/. %{buildroot}/usr/share/doc/lanboat/
 %files
 /usr/bin/lanboat
+/usr/libexec/lanboat-tun-worker
+/usr/libexec/lanboat-core
 /usr/share/applications/lanboat.desktop
 /usr/share/icons/hicolor/scalable/apps/lanboat.svg
 /usr/share/doc/lanboat/

@@ -11,7 +11,6 @@ import (
 	"syscall"
 	"time"
 
-	allinone "github.com/zatxm/lanboat-allinone"
 	"github.com/zatxm/lanboat-app/internal/appmeta"
 	"github.com/zatxm/lanboat-app/internal/desktop"
 	"github.com/zatxm/lanboat-app/internal/dnscheck"
@@ -20,8 +19,12 @@ import (
 )
 
 func main() {
-	debug.SetMemoryLimit(64 << 20)
-	debug.SetGCPercent(100)
+	if os.Getenv("GOMEMLIMIT") == "" {
+		debug.SetMemoryLimit(64 << 20)
+	}
+	if os.Getenv("GOGC") == "" {
+		debug.SetGCPercent(80)
+	}
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, "Lanboat:", err)
 		os.Exit(1)
@@ -33,22 +36,11 @@ func run() error {
 		fmt.Println(appmeta.Version)
 		return nil
 	}
-	if handled, err := allinone.RunTailscaleSSHWorker(os.Args[1:]); handled {
-		return err
-	}
-	if handled, err := allinone.RunNetworkNamespaceWorker(os.Args[1:]); handled {
-		return err
-	}
 	if len(os.Args) == 2 && os.Args[1] == "--dns-probe" {
 		ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 		defer cancel()
 		return json.NewEncoder(os.Stdout).Encode(dnscheck.TUN(ctx))
 	}
-	if len(os.Args) == 2 && os.Args[1] == "--tun-worker" {
-		debug.SetMemoryLimit(32 << 20)
-		return runTUNWorker()
-	}
-
 	dir, err := appmeta.DataDir()
 	if err != nil {
 		return err

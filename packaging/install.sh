@@ -8,7 +8,7 @@ done
 prefix=${LANBOAT_INSTALL_PREFIX:-"$HOME/.local"}
 target="$prefix/opt/lanboat"
 mkdir -p "$target" "$prefix/bin" "$prefix/share/applications" "$prefix/share/icons/hicolor/scalable/apps"
-install -m 755 lanboat uninstall.sh "$target/"
+install -m 755 lanboat lanboat-core uninstall.sh "$target/"
 for old in sing-box sing-box-vpn libcronet.so naive lanboat-server lanboat-tun lanboat-brook lanboat-lua lanboat-protocols lanboat-sudoku lanboat-hysteria1 lanboat-xray juicity-client lanboat-v2ray mihomo ck-client COPYING.xray COPYING.juicity COPYING.mihomo COPYING.cloak; do
   rm -f "$target/$old"
 done

@@ -11,7 +11,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"github.com/goccy/go-json"
-	allinone "github.com/zatxm/lanboat-allinone"
+	allinone "github.com/zatxm/lanboat-allinone/v26"
 	"github.com/zatxm/lanboat-app/internal/profile"
 	"github.com/zatxm/lanboat-app/internal/routing"
 	"github.com/zatxm/lanboat-app/internal/traffic"
@@ -394,10 +394,7 @@ func TestHTTPSLogDoesNotInventDecryptedRequests(t *testing.T) {
 	}
 }
 
-type discardSessionPipe struct{ io.Writer }
-
-func (discardSessionPipe) Close() error { return nil }
-func TestUnexpectedTUNWorkerExitStopsProxy(t *testing.T) {
+func TestUnexpectedBackendExitStopsProxy(t *testing.T) {
 	c := profile.Default()
 	c.Settings.Mode = "direct"
 	c.Settings.Port = freePort(t)
@@ -406,11 +403,19 @@ func TestUnexpectedTUNWorkerExitStopsProxy(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer e.Stop()
-	done := make(chan struct{})
-	close(done)
-	e.tun = &tunSession{pipe: discardSessionPipe{io.Discard}, done: done, err: fmt.Errorf("worker lost")}
-	state := e.State()
-	if state.Connected || !strings.Contains(state.Error, "worker lost") {
+	process, err := os.FindProcess(e.runtime.PID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = process.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-e.runtime.Done():
+	case <-time.After(5 * time.Second):
+		t.Fatal("backend did not exit")
+	}
+	if state := e.State(); state.Connected || state.Error == "" {
 		t.Fatal(state)
 	}
 	listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", c.Settings.Port))

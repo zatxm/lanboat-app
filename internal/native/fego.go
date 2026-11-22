@@ -18,6 +18,7 @@ import (
 	"github.com/zatxm/lanboat-app/internal/appmeta"
 	"github.com/zatxm/lanboat-app/internal/desktop"
 	"github.com/zatxm/lanboat-app/internal/i18n"
+	"github.com/zatxm/lanboat-app/internal/resident"
 	icons "github.com/zatxm/lanboat-app/packaging"
 	"go.uber.org/zap"
 )
@@ -169,6 +170,12 @@ func Run(backend *desktop.App, logger *zap.Logger) error {
 			logger.Warn("initialize system tray", zap.Error(err))
 		}
 		v.tray = tray
+		v.window.OnReady(func() {
+			go func() {
+				debug.FreeOSMemory()
+				resident.ReleaseExecutablePages()
+			}()
+		})
 		go u.poll()
 		go u.backend.RunRuleUpdates(u.done)
 	})

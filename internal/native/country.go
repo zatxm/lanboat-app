@@ -21,6 +21,31 @@ func countryFlag(code string) string {
 	}
 	return string([]rune{0x1f1e6 + rune(code[0]-'a'), 0x1f1e6 + rune(code[1]-'a')})
 }
+
+func (u *UI) refreshFlags(visible bool) {
+	if !visible || !u.flagsEnabled || u.flagsBusy {
+		u.flagDeadline.Store(0)
+		return
+	}
+	now := time.Now()
+	var next time.Time
+	var pending []string
+	for _, host := range u.flagHosts {
+		until := u.flags[host].until
+		if !until.After(now) {
+			pending = append(pending, host)
+		} else if next.IsZero() || until.Before(next) {
+			next = until
+		}
+	}
+	if len(pending) > 0 || next.IsZero() {
+		u.flagDeadline.Store(0)
+	} else {
+		u.flagDeadline.Store(next.UnixNano())
+	}
+	u.loadFlags(pending)
+}
+
 func (u *UI) loadFlags(hosts []string) {
 	if !u.flagsEnabled || u.flagsBusy || len(hosts) == 0 {
 		return

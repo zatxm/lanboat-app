@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/goccy/go-json"
-	allinone "github.com/zatxm/lanboat-allinone"
+	"github.com/zatxm/lanboat-app/internal/coreipc"
 	"net"
 	"os/exec"
 	"strings"
@@ -54,14 +54,15 @@ func (e *Engine) DNSDiagnostics(ctx context.Context, c profile.Config) (string, 
 			return "", err
 		}
 		release()
-		rt, err := allinone.New(ctx, raw)
+		program, err := coreipc.Executable(path)
 		if err != nil {
 			return "", err
 		}
-		defer rt.Close()
-		if err = rt.Start(); err != nil {
+		backend, err := coreipc.Launch(ctx, program, coreipc.Request{Op: "start", Config: raw}, nil)
+		if err != nil {
 			return "", err
 		}
+		defer backend.Close()
 
 		servers = d["servers"].([]any)
 	}

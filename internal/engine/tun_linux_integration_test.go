@@ -18,34 +18,20 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
 	"github.com/miekg/dns"
-	allinone "github.com/zatxm/lanboat-allinone"
+	allinone "github.com/zatxm/lanboat-allinone/v26"
 	"github.com/zatxm/lanboat-app/internal/profile"
 	"github.com/zatxm/lanboat-app/internal/traffic"
 	"github.com/zatxm/lanboat-app/internal/tunmode"
-	"github.com/zatxm/lanboat-app/internal/tunworker"
 	"go.uber.org/zap"
 )
 
 func TestMain(m *testing.M) {
 	if len(os.Args) == 2 {
 		switch os.Args[1] {
-		case "--tun-worker":
-			if app := os.Getenv("LANBOAT_TUN_TEST_APP"); app != "" {
-				if err := syscall.Exec(app, []string{app, "--tun-worker"}, os.Environ()); err != nil {
-					fmt.Fprintln(os.Stderr, err)
-					os.Exit(1)
-				}
-			}
-			if err := tunworker.Run(); err != nil {
-				fmt.Fprintln(os.Stderr, err)
-				os.Exit(1)
-			}
-			os.Exit(0)
 		case "--tun-peer-dns":
 			if err := tunPeerDNS(); err != nil {
 				fmt.Fprintln(os.Stderr, err)
@@ -350,7 +336,7 @@ func TestTUNLinuxBootstrapDoesNotReenterTunnel(t *testing.T) {
 			// A query from the app must reach the actual bootstrap DNS service.
 			query := new(dns.Msg).SetQuestion("node.lanboat-test.invalid.", dns.TypeA)
 			client := &dns.Client{Net: "tcp", Timeout: 3 * time.Second}
-			response, _, err := client.ExchangeContext(ctx, query, net.JoinHostPort("127.0.0.1", strconv.Itoa(e.tunDNSPort)))
+			response, _, err := client.ExchangeContext(ctx, query, net.JoinHostPort("127.0.0.1", strconv.Itoa(e.dnsPorts[0])))
 			if err != nil || len(response.Answer) != 1 {
 				t.Fatalf("bootstrap DNS query did not reach upstream: %v (%v)", response, err)
 			}
@@ -360,6 +346,46 @@ func TestTUNLinuxBootstrapDoesNotReenterTunnel(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestTUNLinuxBackendCrashClearsRoutes(t *testing.T) {
+	requireTUNTestNamespace(t)
+	config := profile.Default()
+	config.Settings.Mode = "tun"
+	config.Settings.Port = freePort(t)
+	config.Nodes = []profile.Node{{ID: "peer", Type: "socks5", Server: "127.0.0.1", Port: freePort(t)}}
+	config.Selected = "peer"
+	e := New(FindCore(), t.TempDir(), zap.NewNop())
+	defer e.Stop()
+	if err := e.Start(config); err != nil {
+		t.Fatal(err)
+	}
+	proc, err := os.FindProcess(e.runtime.PID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = proc.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-e.runtime.Done():
+	case <-time.After(6 * time.Second):
+		t.Fatal("backend did not exit")
+	}
+	if e.State().Connected {
+		t.Fatal("backend exit was not reported")
+	}
+	deadline := time.Now().Add(6 * time.Second)
+	for time.Now().Before(deadline) {
+		_, ifaceErr := net.InterfaceByName(tunmode.Interface)
+		v4, _ := exec.Command("ip", "-4", "rule", "show").Output()
+		v6, _ := exec.Command("ip", "-6", "rule", "show").Output()
+		if ifaceErr != nil && !strings.Contains(string(v4)+string(v6), "lookup 20245") {
+			return
+		}
+		time.Sleep(40 * time.Millisecond)
+	}
+	t.Fatal("the privileged helper left its device or policy rules after backend crash")
 }
 
 func requireTUNTestNamespace(t *testing.T) {

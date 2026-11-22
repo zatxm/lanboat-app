@@ -13,8 +13,6 @@ type Memory struct {
 	Limit     int64 `json:"limit"`
 }
 
-// Follow children of every thread: Go can start a core from a non-leader thread.
-// RSS includes shared pages in each process, matching the app's memory budget.
 func ProcessMemory(root int) Memory {
 	result := Memory{Limit: 200_000_000}
 	pending := []int{root}
@@ -27,17 +25,13 @@ func ProcessMemory(root int) Memory {
 		}
 		seen[pid] = true
 		dir := filepath.Join("/proc", strconv.Itoa(pid))
-		data, err := os.ReadFile(filepath.Join(dir, "statm"))
+		data, err := os.ReadFile(filepath.Join(dir, "status"))
 		if err != nil {
 			continue
 		}
-		fields := strings.Fields(string(data))
-		if len(fields) < 2 {
-			continue
-		}
-		rss, _ := strconv.ParseInt(fields[1], 10, 64)
-		result.RSS += rss * int64(os.Getpagesize())
+		result.RSS += residentBytes(string(data))
 		result.Processes++
+		// Go can start a helper from a non-leader thread.
 		tasks, _ := os.ReadDir(filepath.Join(dir, "task"))
 		for _, task := range tasks {
 			children, err := os.ReadFile(filepath.Join(dir, "task", task.Name(), "children"))
@@ -51,4 +45,17 @@ func ProcessMemory(root int) Memory {
 		}
 	}
 	return result
+}
+
+func residentBytes(status string) int64 {
+	for line := range strings.SplitSeq(status, "\n") {
+		if value, ok := strings.CutPrefix(line, "VmRSS:"); ok {
+			for kib := range strings.FieldsSeq(value) {
+				n, _ := strconv.ParseInt(kib, 10, 64)
+				return n * 1024
+			}
+			break
+		}
+	}
+	return 0
 }
