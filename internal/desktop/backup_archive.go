@@ -3,9 +3,9 @@ package desktop
 import (
 	"archive/tar"
 	"compress/gzip"
-	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/goccy/go-json"
 	"io"
 	"io/fs"
 	"os"

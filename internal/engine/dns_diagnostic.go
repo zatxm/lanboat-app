@@ -2,8 +2,8 @@ package engine
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	"github.com/goccy/go-json"
 	allinone "github.com/zatxm/lanboat-allinone"
 	"net"
 	"os/exec"

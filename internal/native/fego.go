@@ -7,13 +7,14 @@ import (
 	"image/png"
 	"os/exec"
 	"runtime"
+	"runtime/debug"
 	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
 
-	"github.com/zatxm/fego"
-	"github.com/zatxm/fego/ui"
+	"github.com/zatxm/fego/v26"
+	"github.com/zatxm/fego/v26/ui"
 	"github.com/zatxm/lanboat-app/internal/appmeta"
 	"github.com/zatxm/lanboat-app/internal/desktop"
 	"github.com/zatxm/lanboat-app/internal/i18n"
@@ -62,7 +63,6 @@ type nativeView struct {
 	window                                              *fego.Window
 	compact                                             bool
 	events                                              fego.View
-	pointerRelease                                      func(fego.Event)
 	doc                                                 *ui.Document
 	tester                                              *ui.Tester
 	ui                                                  *UI
@@ -97,7 +97,16 @@ var active *nativeView
 
 const toolkitName = "Fego"
 
-func toolkitVersion() string { return "1.0.3" }
+func toolkitVersion() string {
+	if info, ok := debug.ReadBuildInfo(); ok {
+		for _, dep := range info.Deps {
+			if dep.Path == "github.com/zatxm/fego/v26" && strings.HasPrefix(dep.Version, "v") {
+				return strings.TrimPrefix(dep.Version, "v")
+			}
+		}
+	}
+	return "26"
+}
 
 func newView(u *UI) (*nativeView, error) {
 	v := &nativeView{ui: u, widgets: map[int]*widget{}, nav: map[string]*widget{}}
@@ -223,12 +232,6 @@ func (w *widget) dispatch(event, value string) {
 	}
 }
 func (w *widget) activate() {
-	if send := w.view.pointerRelease; send != nil && (hasClass(w.classes, "switch") || hasClass(w.classes, "icon-only")) {
-		// Fego 1.0.3 keeps the pointer's focus halo until focus moves.
-		// Clear mouse focus before the action can open a dialog that remembers it.
-		send(fego.Event{Kind: fego.PointerDown, X: -1, Y: -1, Button: 1})
-		send(fego.Event{Kind: fego.PointerUp, X: -1, Y: -1, Button: 1})
-	}
 	w.dispatch("click", "")
 }
 func (v *nativeView) create(kind string, p props) *widget {
@@ -303,7 +306,7 @@ func (v *nativeView) create(kind string, p props) *widget {
 				}
 			}
 		} else {
-			w.pointer = ui.Button(w.displayText(), func() { w.dispatch("click", "") })
+			w.pointer = ui.Button(w.displayText(), w.activate)
 		}
 	default:
 		w.pointer = ui.Text(w.displayText())
@@ -584,11 +587,6 @@ func (w *widget) bounds() (int, int, int, int) {
 func openNativeDialog(w *widget, width, height int) {
 	w.view.doc.ShowDialog(w.pointer.Width(float32(width)).MaxHeight(float32(height)))
 }
-func closeNativeDialog() {
-	if active != nil {
-		active.doc.CloseDialog()
-	}
-}
 func fitNativeDialog() {
 	if active != nil && active.popupRoot != nil {
 		active.popupRoot.pointer.Refresh()
@@ -671,20 +669,13 @@ func (d eventView) Event(e fego.Event) {
 		d.v.flush()
 		return
 	}
-	d.v.dispatchInput(e, d.View.Event)
-}
-func (v *nativeView) dispatchInput(e fego.Event, send func(fego.Event)) {
-	if e.Kind == fego.PointerUp && e.Button == 1 {
-		v.pointerRelease = send
-		defer func() { v.pointerRelease = nil }()
-	}
-	send(e)
+	d.View.Event(e)
 }
 func (v *nativeView) send(e fego.Event) {
 	if v.tester != nil {
-		v.dispatchInput(e, v.tester.Send)
+		v.tester.Send(e)
 	} else if v.events != nil {
-		v.dispatchInput(e, v.events.Event)
+		v.events.Event(e)
 	}
 }
 func (w *widget) focus() {

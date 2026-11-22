@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zatxm/fego"
+	"github.com/zatxm/fego/v26"
 
 	"github.com/zatxm/lanboat-app/internal/profile"
 )

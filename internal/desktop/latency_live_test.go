@@ -2,7 +2,7 @@ package desktop
 
 import (
 	"context"
-	"encoding/json"
+	"github.com/goccy/go-json"
 	"github.com/zatxm/lanboat-app/internal/profile"
 	"os"
 	"testing"

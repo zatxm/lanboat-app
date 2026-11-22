@@ -1,6 +1,6 @@
 package profile
 
-import "encoding/json"
+import "github.com/goccy/go-json"
 
 // Keep saved nodes, backups and share links usable after merging duplicate types.
 func (n *Node) UnmarshalJSON(data []byte) error {

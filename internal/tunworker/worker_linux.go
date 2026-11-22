@@ -7,9 +7,9 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/goccy/go-json"
 	"io"
 	"net"
 	"os"
@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"syscall"
+	"time"
 
 	allinone "github.com/zatxm/lanboat-allinone"
 	"github.com/zatxm/lanboat-app/internal/tunmode"
@@ -83,15 +84,15 @@ func Run() error {
 	if err = checkRoutingSpace(); err != nil {
 		return err
 	}
-	config := request.Config(ownerPath)
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+	go func() { io.Copy(io.Discard, reader); cancel() }()
+	config := request.Config(ownerPath, tunDNSMode(ctx))
 	data, err := json.Marshal(config)
 	if err != nil {
 		return err
 	}
 
-	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer cancel()
-	go func() { io.Copy(io.Discard, reader); cancel() }()
 	runtime, err := allinone.New(ctx, data)
 	if err != nil {
 		return err
@@ -106,6 +107,24 @@ func Run() error {
 	fmt.Println("LANBOAT_TUN_READY")
 	<-ctx.Done()
 	return nil
+}
+
+func tunDNSMode(ctx context.Context) string {
+	if allinone.Check(ctx, []byte(`{"inbounds":[{"type":"tun","dns_mode":"routed"}]}`)) == nil {
+		return "routed"
+	}
+	// Older cores can use the virtual DNS address without intercepting every upstream query.
+	own, err := os.Readlink("/proc/self/ns/net")
+	initial, initialErr := os.Readlink("/proc/1/ns/net")
+	if err != nil || initialErr != nil || own != initial {
+		return "disabled"
+	}
+	probe, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	if exec.CommandContext(probe, "/usr/bin/resolvectl", "status").Run() == nil {
+		return "native"
+	}
+	return "disabled"
 }
 
 type ipRule struct {

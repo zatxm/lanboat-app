@@ -3,8 +3,8 @@ package traffic
 import (
 	"bufio"
 	"cmp"
-	"encoding/json"
 	"fmt"
+	"github.com/goccy/go-json"
 	"io"
 	"os"
 	"path/filepath"

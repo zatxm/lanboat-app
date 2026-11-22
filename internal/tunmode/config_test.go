@@ -2,7 +2,7 @@ package tunmode
 
 import (
 	"context"
-	"encoding/json"
+	"github.com/goccy/go-json"
 	allinone "github.com/zatxm/lanboat-allinone"
 	"os"
 	"strings"
@@ -19,7 +19,7 @@ func TestTUNRequestAndCoreConfig(t *testing.T) {
 			t.Fatal("invalid privileged request accepted")
 		}
 	}
-	raw, err := json.Marshal(r.Config("/opt/lanboat/lanboat"))
+	raw, err := json.Marshal(r.Config("/opt/lanboat/lanboat", "native"))
 	if err != nil {
 		t.Fatal(err)
 	}

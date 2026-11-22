@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/zatxm/fego/ui"
+	"github.com/zatxm/fego/v26/ui"
 	"github.com/zatxm/lanboat-app/internal/profile"
 )
 

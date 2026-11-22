@@ -1,9 +1,9 @@
 package desktop
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/goccy/go-json"
 	"net/url"
 	"path"
 	"path/filepath"

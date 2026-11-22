@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/zatxm/fego"
+	"github.com/zatxm/fego/v26"
 	"github.com/zatxm/lanboat-app/internal/profile"
 )
 
@@ -23,12 +23,21 @@ func TestFegoNavigationAndInput(t *testing.T) {
 		if r.W < 1 || r.H < 1 {
 			t.Fatal("control has no bounds", w.text, r)
 		}
-		v.tester.Click(r.X+r.W/2, r.Y+r.H/2)
+		x, y := r.X+r.W/2, r.Y+r.H/2
+		v.send(fego.Event{Kind: fego.PointerDown, X: x, Y: y, Button: 1})
+		v.send(fego.Event{Kind: fego.PointerUp, X: x, Y: y, Button: 1})
 		v.tester.Step()
 	}
-	click(v.nav["settings"])
+	settings := v.nav["settings"]
+	r := settings.pointer.Bounds()
+	x, y := int(r.X-2), int(r.Y+r.H/2)
+	before := v.tester.Snapshot().RGBAAt(x, y)
+	click(settings)
 	if u.page != "settings" {
 		t.Fatal("sidebar click did not navigate")
+	}
+	if got := v.tester.Snapshot().RGBAAt(x, y); got != before {
+		t.Fatal("sidebar click left a focus ring outside the menu item", got, before)
 	}
 	u.editNode(profile.Node{Type: "ss"})
 	v.flush()

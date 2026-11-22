@@ -3,8 +3,8 @@ package profile
 import (
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
+	"github.com/goccy/go-json"
 	"net/http"
 	"net/netip"
 	"strconv"

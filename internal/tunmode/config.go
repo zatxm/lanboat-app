@@ -48,13 +48,16 @@ func (r Request) Validate() error {
 	return nil
 }
 
-func (r Request) Config(ownerPath string) map[string]any {
-	paths := []string{ownerPath}
-	rules := []any{map[string]any{"process_path": paths, "action": "route", "outbound": "direct"}, map[string]any{"action": "sniff"}, map[string]any{"protocol": "dns", "action": "hijack-dns"}}
-	rules = append(rules[:1], append(udpconfig.Rules(r.UDP, !r.UDP.RelayEnabled()), rules[1:]...)...)
+func (r Request) Config(ownerPath, dnsMode string) map[string]any {
+	rules := []any{
+		map[string]any{"process_path": []string{ownerPath}, "action": "route", "outbound": "direct"},
+		map[string]any{"port": []int{53}, "action": "hijack-dns"},
+	}
+	rules = append(rules, udpconfig.Rules(r.UDP, !r.UDP.RelayEnabled())...)
+	rules = append(rules, map[string]any{"action": "sniff"}, map[string]any{"protocol": "dns", "action": "hijack-dns"})
 	out := map[string]any{
 		"log":          map[string]any{"level": "warn"},
-		"inbounds":     []any{map[string]any{"type": "tun", "tag": "tun-in", "interface_name": Interface, "address": []string{"172.29.45.1/30", "fdfe:29:45::1/126"}, "mtu": 1500, "udp_timeout": strconv.Itoa(r.UDP.Seconds()) + "s", "auto_route": true, "strict_route": true, "dns_mode": "hijack", "iproute2_table_index": Table, "iproute2_rule_index": RuleStart}},
+		"inbounds":     []any{map[string]any{"type": "tun", "tag": "tun-in", "interface_name": Interface, "address": []string{"172.29.45.1/30", "fdfe:29:45::1/126"}, "mtu": 1500, "udp_timeout": strconv.Itoa(r.UDP.Seconds()) + "s", "auto_route": true, "strict_route": true, "dns_mode": dnsMode, "iproute2_table_index": Table, "iproute2_rule_index": RuleStart}},
 		"outbounds":    []any{map[string]any{"type": "direct", "tag": "direct"}, map[string]any{"type": "socks", "tag": "proxy", "server": "127.0.0.1", "server_port": r.ProxyPort, "version": "5", "username": r.ProxyUsername, "password": r.ProxyPassword}},
 		"route":        map[string]any{"auto_detect_interface": true, "find_process": true, "rules": rules, "final": "proxy"},
 		"dns":          map[string]any{"servers": []any{map[string]any{"type": "tcp", "tag": "gui-dns", "server": "127.0.0.1", "server_port": r.DNSPort}}, "final": "gui-dns", "disable_cache": true},

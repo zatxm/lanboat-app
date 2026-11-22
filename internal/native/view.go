@@ -138,7 +138,7 @@ func (v *nativeView) buildRoot() {
 	v.scroll = v.create("scroll", props{expand: true})
 	v.pack(v.scroll, v.main)
 	content := v.box("", false, 0, true, v.header, v.scroll)
-	v.shell = v.box("shell", true, 0, false, sidebar, content)
+	v.shell = v.box("shell", true, 0, false, sidebar, v.create("separator", props{}), content)
 	attachWindow(v)
 }
 func serverTypes() []option {
@@ -345,12 +345,6 @@ func (v *nativeView) refresh() {
 		if u.status.Connected {
 			power = "断开连接"
 		}
-		class := "connection-title toolbar-label"
-		if u.status.Connected {
-			class += " green"
-		}
-		v.connection.setText("连接")
-		v.connection.setClasses(class)
 
 		v.power.setText(power)
 		if u.status.Connected {

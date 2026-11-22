@@ -1,7 +1,7 @@
 package desktop
 
 import (
-	"encoding/json"
+	"github.com/goccy/go-json"
 	"github.com/zatxm/lanboat-app/internal/profile"
 	"net/http"
 	"net/http/httptest"

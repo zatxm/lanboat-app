@@ -8,7 +8,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/zatxm/fego/ui"
+	"github.com/zatxm/fego/v26/ui"
 )
 
 //go:embed flags.png

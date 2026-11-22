@@ -1,8 +1,8 @@
 package desktop
 
 import (
-	"encoding/json"
 	"errors"
+	"github.com/goccy/go-json"
 	"slices"
 
 	"github.com/zatxm/lanboat-app/internal/profile"

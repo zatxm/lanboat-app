@@ -2,7 +2,7 @@ package ruledata
 
 import (
 	_ "embed"
-	"encoding/json"
+	"github.com/goccy/go-json"
 	"os"
 	"strings"
 	"time"

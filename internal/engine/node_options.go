@@ -2,7 +2,7 @@ package engine
 
 import (
 	"context"
-	"encoding/json"
+	"github.com/goccy/go-json"
 	"strings"
 
 	allinone "github.com/zatxm/lanboat-allinone"

@@ -2,8 +2,8 @@ package routing
 
 import (
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
+	"github.com/goccy/go-json"
 	"strconv"
 	"strings"
 )

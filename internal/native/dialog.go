@@ -110,12 +110,13 @@ func (v *nativeView) syncPopup() {
 				}
 			}
 			v.controls = controls
-			closeNativeDialog()
 			v.popupRoot = nil
 			v.popupError = nil
 		}
 		v.popupShown = u.popup
-		if u.popup != nil {
+		if u.popup == nil {
+			v.doc.CloseDialog()
+		} else {
 			p := u.popup
 			box := v.box("dialog-surface", false, 14, false)
 			v.popupRoot = box

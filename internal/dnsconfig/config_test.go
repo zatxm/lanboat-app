@@ -2,8 +2,8 @@ package dnsconfig
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	"github.com/goccy/go-json"
 	"net"
 	"os"
 	"os/exec"

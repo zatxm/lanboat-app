@@ -1,7 +1,7 @@
 package profile
 
 import (
-	"encoding/json"
+	"github.com/goccy/go-json"
 	"reflect"
 	"strings"
 	"testing"

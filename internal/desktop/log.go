@@ -1,8 +1,8 @@
 package desktop
 
 import (
-	"encoding/json"
 	"fmt"
+	"github.com/goccy/go-json"
 	"os"
 	"path/filepath"
 	"slices"

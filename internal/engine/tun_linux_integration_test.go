@@ -3,12 +3,13 @@
 package engine
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/x509"
-	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"github.com/goccy/go-json"
 	"io"
 	"net"
 	"net/http"
@@ -41,6 +42,12 @@ func TestMain(m *testing.M) {
 				}
 			}
 			if err := tunworker.Run(); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
+			os.Exit(0)
+		case "--tun-peer-dns":
+			if err := tunPeerDNS(); err != nil {
 				fmt.Fprintln(os.Stderr, err)
 				os.Exit(1)
 			}
@@ -124,14 +131,7 @@ func TestTUNLinuxIntegratedRuntime(t *testing.T) {
 	}
 }
 func runTUNLinuxIntegratedRuntime(t *testing.T, kind string, auth bool) {
-	if os.Getenv("LANBOAT_TEST_TUN") != "1" {
-		t.Skip("isolated network namespace required")
-	}
-	own, _ := os.Readlink("/proc/self/ns/net")
-	initial := os.Getenv("LANBOAT_TEST_HOST_NETNS")
-	if os.Geteuid() != 0 || initial == "" || own == initial {
-		t.Fatal("refusing to alter the host network")
-	}
+	requireTUNTestNamespace(t)
 	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { io.Copy(w, r.Body) }))
 	defer origin.Close()
 	_, tcpPort, _ := net.SplitHostPort(strings.TrimPrefix(origin.URL, "http://"))
@@ -247,5 +247,129 @@ func runTUNLinuxIntegratedRuntime(t *testing.T, kind string, auth bool) {
 		if strings.Contains(string(output), "lookup 20245") {
 			t.Fatal("TUN routing rule leaked", string(output))
 		}
+	}
+}
+
+// The external listener sits beyond the TUN host's loopback and local table.
+const bootstrapPeerIP = "198.51.100.53"
+
+func tunPeerDNS() error {
+	fmt.Println("namespace-ready")
+	if _, err := bufio.NewReader(os.Stdin).ReadString('\n'); err != nil {
+		return err
+	}
+	addr := net.JoinHostPort(bootstrapPeerIP, "53")
+	packet, err := net.ListenPacket("udp4", addr)
+	if err != nil {
+		return err
+	}
+	defer packet.Close()
+	listener, err := net.Listen("tcp4", addr)
+	if err != nil {
+		return err
+	}
+	defer listener.Close()
+	handler := dns.HandlerFunc(func(w dns.ResponseWriter, q *dns.Msg) {
+		reply := new(dns.Msg).SetReply(q)
+		reply.Answer = []dns.RR{&dns.A{
+			Hdr: dns.RR_Header{Name: q.Question[0].Name, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 60},
+			A:   net.IPv4(203, 0, 113, 9),
+		}}
+		w.WriteMsg(reply)
+	})
+	tcp := &dns.Server{Listener: listener, Handler: handler}
+	go tcp.ActivateAndServe()
+	udp := &dns.Server{PacketConn: packet, Handler: handler, NotifyStartedFunc: func() { fmt.Println("dns-ready") }}
+	return udp.ActivateAndServe()
+}
+
+func TestTUNLinuxBootstrapDoesNotReenterTunnel(t *testing.T) {
+	requireTUNTestNamespace(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	peer := exec.CommandContext(ctx, "unshare", "-n", os.Args[0], "--tun-peer-dns")
+	peer.Stderr = os.Stderr
+	input, err := peer.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	output, err := peer.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = peer.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { cancel(); peer.Wait() }()
+	lines := bufio.NewScanner(output)
+	waitFor := func(want string) {
+		t.Helper()
+		if !lines.Scan() || lines.Text() != want {
+			t.Fatalf("DNS fixture did not send %s: %s (%v)", want, lines.Text(), lines.Err())
+		}
+	}
+	waitFor("namespace-ready")
+	ip := func(args ...string) {
+		t.Helper()
+		if result, err := exec.CommandContext(ctx, "ip", args...).CombinedOutput(); err != nil {
+			t.Fatalf("ip %v: %v: %s", args, err, result)
+		}
+	}
+	pid := strconv.Itoa(peer.Process.Pid)
+	ip("link", "add", "tun-test-uplink", "type", "veth", "peer", "name", "tun-test-dns", "netns", pid)
+	defer exec.Command("ip", "link", "del", "tun-test-uplink").Run()
+	ip("addr", "add", "198.51.100.2/24", "dev", "tun-test-uplink")
+	ip("link", "set", "tun-test-uplink", "up")
+	for _, args := range [][]string{
+		{"addr", "add", bootstrapPeerIP + "/24", "dev", "tun-test-dns"},
+		{"link", "set", "tun-test-dns", "up"},
+	} {
+		command := append([]string{"-t", pid, "-n", "ip"}, args...)
+		if result, err := exec.CommandContext(ctx, "nsenter", command...).CombinedOutput(); err != nil {
+			t.Fatalf("peer ip %v: %v: %s", args, err, result)
+		}
+	}
+	fmt.Fprintln(input)
+	waitFor("dns-ready")
+
+	for _, transport := range []string{"udp", "tcp"} {
+		t.Run(transport, func(t *testing.T) {
+			c := profile.Default()
+			c.Settings.Mode = "tun"
+			c.Settings.Port = freePort(t)
+			c.Nodes = []profile.Node{{ID: "unused-node", Type: "socks5", Server: "node.lanboat-test.invalid", Port: freePort(t)}}
+			c.Selected = c.Nodes[0].ID
+			settings := profile.DefaultDNS()
+			settings.Bootstrap = transport + "://" + bootstrapPeerIP
+			c.Settings.DNS = &settings
+			e := New(FindCore(), t.TempDir(), zap.NewNop())
+			defer e.Stop()
+			if err := e.StartContext(ctx, c); err != nil {
+				t.Fatal(err)
+			}
+			// A query from the app must reach the actual bootstrap DNS service.
+			query := new(dns.Msg).SetQuestion("node.lanboat-test.invalid.", dns.TypeA)
+			client := &dns.Client{Net: "tcp", Timeout: 3 * time.Second}
+			response, _, err := client.ExchangeContext(ctx, query, net.JoinHostPort("127.0.0.1", strconv.Itoa(e.tunDNSPort)))
+			if err != nil || len(response.Answer) != 1 {
+				t.Fatalf("bootstrap DNS query did not reach upstream: %v (%v)", response, err)
+			}
+			answer, ok := response.Answer[0].(*dns.A)
+			if !ok || !answer.A.Equal(net.IPv4(203, 0, 113, 9)) {
+				t.Fatalf("unexpected bootstrap answer: %v", response.Answer)
+			}
+		})
+	}
+}
+
+func requireTUNTestNamespace(t *testing.T) {
+	t.Helper()
+	if os.Getenv("LANBOAT_TEST_TUN") != "1" {
+		t.Skip("isolated network namespace required")
+	}
+	own, _ := os.Readlink("/proc/self/ns/net")
+	initial := os.Getenv("LANBOAT_TEST_HOST_NETNS")
+	if os.Geteuid() != 0 || initial == "" || own == initial {
+		t.Fatal("refusing to alter the host network")
 	}
 }

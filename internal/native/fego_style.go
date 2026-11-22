@@ -5,24 +5,17 @@ import (
 	"strings"
 	"time"
 
-	"github.com/zatxm/fego/ui"
+	"github.com/zatxm/fego/v26/ui"
 )
 
 func lanboatTheme(appearance string) ui.Theme {
-	white := ui.RGB(255, 255, 255)
 	if appearance == "dark" {
-		return ui.Theme{
-			Background: ui.RGB(20, 21, 24), Surface: ui.RGB(29, 30, 34), Raised: ui.RGB(42, 45, 51),
-			Text: ui.RGB(229, 231, 235), Muted: ui.RGB(151, 156, 167), Border: ui.RGB(52, 55, 62),
-			Accent: ui.RGB(184, 198, 218), AccentText: ui.RGB(20, 21, 24), Danger: ui.RGB(236, 134, 130), FontSize: 14,
-		}
+		return ui.Dark
 	}
-	return ui.Theme{
-		Background: white, Surface: white, Raised: ui.RGB(239, 240, 243),
-		Text: ui.RGB(31, 35, 41), Muted: ui.RGB(109, 116, 130), Border: ui.RGB(224, 228, 235),
-		Accent: ui.RGB(75, 102, 146), AccentText: white, Danger: ui.RGB(187, 56, 53), FontSize: 14,
-	}
+	return ui.Light
 }
+
+const panelRadius = 12
 
 func hasClass(classes, name string) bool {
 	return strings.Contains(" "+classes+" ", " "+name+" ")
@@ -66,13 +59,13 @@ func (w *widget) style() {
 	case is("stats-grid"):
 		e.AlignItems(ui.Stretch)
 	case is("sidebar"):
-		e.Width(200).Padding(24, 14).Background(t.Background)
+		e.Width(200).Padding(24, 14).Background(t.Sidebar)
 	case is("main"):
 		e.Padding(20, 32, 28, 30)
 	case is("header"):
 		e.Padding(14, 32, 10, 30).MinHeight(62)
 	case is("nav-item"):
-		bg, fg := t.Background, t.Text
+		bg, fg := t.Sidebar, t.Text
 		if is("active") {
 			bg, fg = t.Raised, t.Accent
 		}
@@ -80,11 +73,11 @@ func (w *widget) style() {
 		w.buttonCaption.FontSize(15).TextColor(fg)
 		w.iconColor = fg
 	case is("panel") || is("option-group") || is("dialog-surface"):
-		padding, radius := float32(18), float32(16)
+		padding, radius := float32(18), float32(panelRadius)
 		if is("group") {
 			padding = 1
 		} else if is("option-group") {
-			padding, radius = 14, 11
+			padding, radius = 14, 8
 		}
 		e.Background(t.Surface).Border(t.Border).Radius(radius).Padding(padding)
 		if is("node-editor") {
@@ -107,7 +100,7 @@ func (w *widget) style() {
 	case w.kind == "icon" && w.icon == "unreachable":
 		w.iconColor = t.Danger
 	case is("search-field"):
-		e.Height(43).Padding(1, 9, 1, 10).Radius(9).Background(t.Surface).Border(t.Border)
+		e.Height(43).Padding(1, 9, 1, 10).Radius(8).Background(t.Surface).Border(t.InputBorder)
 	case is("share-link"):
 		e.Height(38).Padding(0, 10).Radius(8).Background(t.Raised).Clip()
 	case is("share-link-preview"):
@@ -123,9 +116,6 @@ func (w *widget) style() {
 		e.FontSize(21).Bold()
 	case is("connection-title"):
 		e.FontSize(18).Bold().TextColor(t.Text)
-		if is("green") {
-			e.TextColor(ui.RGB(40, 135, 99))
-		}
 	case is("section-title"):
 		e.FontSize(13).TextColor(t.Muted)
 	case is("log-error"):
@@ -135,7 +125,7 @@ func (w *widget) style() {
 		if is("level-error") || is("level-fatal") || is("level-panic") || is("level-dpanic") {
 			color = t.Danger
 		} else if is("level-warn") {
-			color = ui.RGB(183, 121, 31)
+			color = t.Text
 		} else if is("level-info") {
 			color = t.Accent
 		}
@@ -255,10 +245,7 @@ func (w *widget) style() {
 const listRowHeight = 64
 
 func (w *widget) selectedRowColor() ui.Color {
-	if w.view.theme == "dark" {
-		return lanboatTheme("dark").Raised
-	}
-	return ui.RGB(243, 247, 253)
+	return lanboatTheme(w.view.theme).Raised
 }
 
 func (w *widget) paintRowSelection(p *ui.Painter) {
@@ -274,7 +261,7 @@ func (w *widget) paintRowSelection(p *ui.Painter) {
 		return
 	}
 	// Match the inside of the frame. Corners beyond the canvas clip stay square.
-	const radius = 15
+	const radius = panelRadius - 1
 	if !first {
 		bounds.Y -= radius
 		bounds.H += radius

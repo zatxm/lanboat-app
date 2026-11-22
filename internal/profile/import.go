@@ -2,9 +2,9 @@ package profile
 
 import (
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/goccy/go-json"
 	"net"
 	"net/netip"
 	"net/url"

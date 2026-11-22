@@ -1,9 +1,9 @@
 package profile
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/goccy/go-json"
 	"slices"
 	"strconv"
 	"strings"

@@ -1,6 +1,6 @@
 package native
 
-import "github.com/zatxm/fego/ui"
+import "github.com/zatxm/fego/v26/ui"
 
 func (v *nativeView) settingText(value func() string) *widget {
 	w := v.dataLabel(value(), "node-name")

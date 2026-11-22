@@ -2,8 +2,8 @@ package desktop
 
 import (
 	"crypto/x509"
-	"encoding/json"
 	"encoding/pem"
+	"github.com/goccy/go-json"
 	"net/http"
 	"net/http/httptest"
 	"os"
