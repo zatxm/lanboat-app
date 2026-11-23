@@ -121,11 +121,12 @@ func TestNativeWindowSettingsRevision(t *testing.T) {
 		t.Fatal("file delete must be a popup")
 	}
 	for _, name := range []string{"取消", "确认"} {
-		if !strings.Contains(button(name).classes, map[string]string{"取消": "secondary", "确认": "primary"}[name]) {
+		if !strings.Contains(button(name).classes, map[string]string{"取消": "secondary", "确认": "danger"}[name]) {
 			t.Fatal("confirmation button not filled", name)
 		}
 	}
-	if !strings.Contains(button("确认").classes, "danger") {
+	r := button("确认").pointer.Bounds()
+	if got := v.tester.Snapshot().RGBAAt(int(r.X+r.W/2), int(r.Y+6)); got != lanboatTheme(v.theme).Danger {
 		t.Fatal("delete confirmation must be red")
 	}
 	button("取消").click()

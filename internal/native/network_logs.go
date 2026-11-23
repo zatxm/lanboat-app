@@ -120,6 +120,9 @@ func logDuration(ms int64) string {
 
 func (v *nativeView) refreshNetworkLogs() {
 	u := v.ui
+	if u.busy {
+		return
+	}
 	if u.networkQuery.Load().(logQuery).Kind == "app" {
 		v.refreshAppLogs()
 		return
@@ -156,7 +159,10 @@ func (v *nativeView) refreshNetworkLogs() {
 		return
 	}
 	pages := (p.Total + traffic.PageSize - 1) / traffic.PageSize
-	v.pack(v.logPager, v.label(fmt.Sprintf("第 %d / %d 页 · %d 项", p.Number+1, pages, p.Total), "help"), v.spacer(), v.button("上一页", "link icon-up", false, p.Number == 0, func() { u.fetchNetworkLogs(p.Kind, p.Number-1) }), v.button("下一页", "link icon-down", false, p.Number+1 >= pages, func() { u.fetchNetworkLogs(p.Kind, p.Number+1) }))
+	v.pack(v.logPager, v.pageBar(p.Number, pages, p.Total, func(next int) {
+		v.logSignature = ""
+		u.fetchNetworkLogs(p.Kind, next)
+	}))
 }
 
 // refreshAppLogs lists the app's own events, newest first.

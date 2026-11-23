@@ -528,6 +528,12 @@ func (u *UI) saveEditor() {
 		u.saveDNS()
 		return
 	case "import":
+		if u.field("nodeImportMethod").Text() == "subscription" {
+			address := strings.TrimSpace(u.field("nodeImportURL").Text())
+			keepRules := u.field("nodeImportRules").Text() == "true"
+			fn = func() error { _, err := u.backend.ImportSubscription(address, keepRules); return err }
+			break
+		}
 		content := u.field("content").Text()
 		if u.field("nodeImportMethod").Text() == "file" {
 			content = u.field("nodeImportPath").Text()

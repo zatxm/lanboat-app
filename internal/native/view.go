@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/zatxm/fego/v26/ui"
 	"github.com/zatxm/lanboat-app/internal/profile"
 )
 
@@ -73,7 +74,11 @@ func (v *nativeView) input(id, placeholder string, multiline, secret, readOnly b
 	return w
 }
 func (v *nativeView) field(id, title, placeholder string, secret bool) *widget {
-	return v.box("field", false, 7, false, v.label(title, "field-label"), v.input(id, placeholder, false, secret, false))
+	input := v.input(id, placeholder, false, secret, false)
+	if v.ui.editor == "node" {
+		return v.nodeRow(title, input)
+	}
+	return v.box("field", false, 7, false, v.label(title, "field-label"), input)
 }
 func (v *nativeView) selectWidget(current string, options []option, config bool, changed func(string)) *widget {
 	w := v.create("select", props{})
@@ -267,14 +272,19 @@ func (v *nativeView) render() {
 
 	v.show()
 	v.refresh()
-	if v.editorScroll != nil && formOffset > 0 {
-		// The replacement scroll view needs bounds before sending a scroll event.
+	if u.editor == "node" || v.editorScroll != nil && formOffset > 0 {
+		// Measure the new fields and scroll viewport before using their bounds.
 		if v.tester != nil {
 			v.tester.Step()
 		} else if painter, ok := v.events.(interface{ PaintIfDirty() }); ok {
 			painter.PaintIfDirty()
 		}
-		v.editorScroll.scrollPosition(formOffset)
+		if u.editor == "node" {
+			v.alignNodeFields()
+		}
+		if formOffset > 0 {
+			v.editorScroll.scrollPosition(formOffset)
+		}
 	}
 	if u.resetScroll {
 		v.top()
@@ -400,7 +410,12 @@ func (v *nativeView) home() {
 		u.notify()
 	}
 	v.inputs["search"] = search
-	searchField := v.box("search-field", true, 2, false, v.icon("search"), search)
+	icon := v.icon("search")
+	searchField := v.box("search-field", true, 0, false)
+	searchField.pointer = ui.InputGroup(search.pointer, icon.pointer, nil)
+	searchField.content = searchField.pointer
+	searchField.style()
+	search.parent, icon.parent = searchField, searchField
 	searchField.event = func(_, _ string) { search.focus() }
 	v.controls = append(v.controls, control{searchField, false, false})
 	v.nodeContainer = v.box("", false, 18, false)
@@ -472,22 +487,18 @@ func (v *nativeView) renderNodes() {
 				u.submit(func() error { _, err := u.backend.RefreshSubscription(g.ID); return err }, func() { u.notice = "订阅已更新" })
 			}))
 		}
-		v.pack(header, v.button("延迟检测", "link icon-only icon-test", false, count == 0, func() { u.testGroupNodes(g.ID) }))
 		const autoClass = "link icon-only icon-auto group-auto-select"
 		auto := v.button("自动选择", autoClass, true, false, func() { u.toggleAutoSelect(g.ID) })
+		auto.setTooltip("自动选择延迟最低的服务器")
 		auto.update = func() {
-			class, hint := "button "+autoClass, "自动选择已关闭。点击开启本组自动选择。"
+			class := "button " + autoClass
 			if u.state.Config.Settings.AutoSelectEnabled(g.ID) {
 				class += " auto-select-on"
-				hint = "自动选择已开启。点击关闭本组自动选择。"
 			}
 			auto.setClasses(class)
-			if auto.tooltip != hint {
-				auto.setTooltip(hint)
-			}
 		}
 		auto.update()
-		v.pack(header, auto)
+		v.pack(header, auto, v.button("延迟检测", "link icon-only icon-test", false, count == 0, func() { u.testGroupNodes(g.ID) }))
 		if g.ID != "" {
 			v.pack(header, v.button("订阅详情", "link icon-only icon-info", false, false, func() { u.openDetail("subscription:" + g.ID) }))
 			v.pack(header, v.button("分享订阅", "link icon-only icon-share", false, false, func() { u.share("subscription", g.ID, g.Name) }))
@@ -576,7 +587,11 @@ func (v *nativeView) renderNodes() {
 	}
 	v.pagination.setVisible(len(nodes) > pageSize)
 	if len(nodes) > pageSize {
-		v.pack(v.pagination, v.label(fmt.Sprintf("第 %d / %d 页 · %d 个节点", page+1, max(1, (len(nodes)+pageSize-1)/pageSize), len(nodes)), "help"), v.spacer(), v.button("上一页", "link", false, page == 0, func() { u.nodePage--; u.nodesDirty = true; u.notify() }), v.button("下一页", "link", false, end == len(nodes), func() { u.nodePage++; u.nodesDirty = true; u.notify() }))
+		v.pack(v.pagination, v.pageBar(page, (len(nodes)+pageSize-1)/pageSize, len(nodes), func(next int) {
+			u.nodePage = next
+			u.nodesDirty = true
+			u.notify()
+		}))
 	}
 }
 
@@ -686,9 +701,8 @@ func (v *nativeView) editor() *widget {
 		if u.draft.Type == "" {
 			protocolWidget.setOptions(protocols, "ss")
 		}
-		protocolWidget.setClasses("protocol-choice")
 		v.inputs["protocol"] = protocolWidget
-		v.pack(box, v.box("protocol-row", true, 12, false, v.label("协议类型", "field-label"), protocolWidget))
+		v.pack(box, v.nodeRow("协议类型", protocolWidget))
 		if u.draft.Type == "subscribe" {
 			v.subscriptionFields(box)
 			break
@@ -703,7 +717,7 @@ func (v *nativeView) editor() *widget {
 		}
 		v.pack(box, v.field("name", "备注", "", false))
 		if u.draft.Kind() != "tailscale" {
-			v.pack(box, v.box("", true, 15, false, v.box("", false, 0, true, v.field("server", "服务器（域名或 IP）", "", false)), v.field("nodePort", "端口", "", false)))
+			v.pack(box, v.field("server", "服务器（域名或 IP）", "", false), v.field("nodePort", "端口", "", false))
 		}
 		noPassword := map[string]bool{"vmess": true, "vless": true, "wireguard": true, "masque": true, "sudoku": true, "tailscale": true}
 		if !noPassword[u.draft.Kind()] {
@@ -764,23 +778,11 @@ func (v *nativeView) editor() *widget {
 func (v *nativeView) subscriptionFields(box *widget) {
 	u := v.ui
 	v.pack(box, v.field("subURL", "URL *", "https://…", false))
-	row := v.box("", true, 24, false)
 	for _, spec := range []struct{ id, title string }{{"subUDP", "UDP 转发"}, {"subInsecure", "允许不安全"}, {"subFastOpen", "TCP 快速打开"}} {
-		w := v.button(spec.title, "switch", false, false, func() { u.field(spec.id).SetText(strconv.FormatBool(u.field(spec.id).Text() != "true")) })
-		w.update = func() {
-			classes := "button switch"
-			if u.field(spec.id).Text() == "true" {
-				classes += " switch-on"
-			}
-			w.setClasses(classes)
-		}
-		v.inputs[spec.id] = w
-		v.pack(row, v.box("field", true, 12, false, v.label(spec.title, "field-label"), w))
+		v.pack(box, v.nodeRow(spec.title, v.switchInput(spec.id, spec.title)))
 	}
-	v.pack(box, row)
-	maximum := v.field("subMax", "最大值", "可选，1–100000", false)
+	v.pack(box, v.field("subMax", "最大值", "可选，1–100000", false), v.field("subUA", "UserAgent", "可选", false))
 	v.inputs["subMax"].setTooltip("如指定最大数量，但服务器返回多于这个数值会被随机丢弃多余的")
-	v.pack(box, v.box("", true, 24, false, v.box("", false, 0, true, maximum), v.box("", false, 0, true, v.field("subUA", "用户代理 (UserAgent)", "可选", false))))
 	password := "密码"
 	if u.draft.ID != "" {
 		password = "密码（留空保留原密码）"
@@ -788,16 +790,7 @@ func (v *nativeView) subscriptionFields(box *widget) {
 	v.pack(box, v.field("subPassword", password, "可选", true), v.field("subFilter", "过滤", "关键字或正则表达式", false))
 	v.inputs["subPassword"].setTooltip("用于解密订阅内容，不会发送给订阅服务器")
 	v.inputs["subFilter"].setTooltip("按节点备注匹配，忽略大小写")
-	w := v.button("保留分流规则", "switch", false, false, func() { u.field("subKeepRules").SetText(strconv.FormatBool(u.field("subKeepRules").Text() != "true")) })
-	w.update = func() {
-		classes := "button switch"
-		if u.field("subKeepRules").Text() == "true" {
-			classes += " switch-on"
-		}
-		w.setClasses(classes)
-	}
-	v.inputs["subKeepRules"] = w
-	v.pack(box, v.box("", true, 12, false, v.label("保留分流规则", "field-label"), w), v.field("name", "备注", "留空使用订阅域名", false))
+	v.pack(box, v.nodeRow("保留分流规则", v.switchInput("subKeepRules", "保留分流规则")), v.field("name", "备注", "留空使用订阅域名", false))
 }
 
 func nodeDescription(n profile.Node) string {

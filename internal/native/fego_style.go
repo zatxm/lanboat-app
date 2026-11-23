@@ -100,7 +100,7 @@ func (w *widget) style() {
 	case w.kind == "icon" && w.icon == "unreachable":
 		w.iconColor = t.Danger
 	case is("search-field"):
-		e.Height(43).Padding(1, 9, 1, 10).Radius(8).Background(t.Surface).Border(t.InputBorder)
+		e.Height(43).AlignItems(ui.Center).Padding(6, 9, 0, 10).Radius(8)
 	case is("share-link"):
 		e.Height(38).Padding(0, 10).Radius(8).Background(t.Raised).Clip()
 	case is("share-link-preview"):
@@ -326,10 +326,24 @@ func (w *widget) paintLineIcon(p *ui.Painter, icon string) {
 			line(6*float32(c), 6*float32(s), 8*float32(c), 8*float32(s))
 		}
 	case "auto":
-		arc(0, 0, 6.5, math.Pi, 1.95*math.Pi)
-		path(pair(2.8, -2.8), pair(6.4, -1), pair(8, -4.7))
-		arc(0, 0, 6.5, 0, .95*math.Pi)
-		path(pair(-2.8, 2.8), pair(-6.4, 1), pair(-8, 4.7))
+		// The filled branch, open branch and spark follow the supplied selection icon.
+		var branches ui.Path
+		branches.MoveTo(x-5.3, y-2.4)
+		branches.CubicTo(x-5.3, y+0.5, x-1, y+0.5, x-1, y+3.7)
+		branches.MoveTo(x+4.3, y-2)
+		branches.CubicTo(x+4.3, y+0.5, x-1, y+0.7, x-1, y+3.7)
+		p.StrokePath(&branches, 1.25, c)
+		p.Circle(x-5.5, y-3, 2.3, c)
+		ring(4.5, -3, 1.8)
+		ring(-1, 5.7, 1.9)
+		var star ui.Path
+		star.MoveTo(x+6.5, y-9)
+		star.QuadTo(x+6.8, y-7.4, x+8.4, y-7.1)
+		star.QuadTo(x+6.8, y-6.8, x+6.5, y-5.2)
+		star.QuadTo(x+6.2, y-6.8, x+4.6, y-7.1)
+		star.QuadTo(x+6.2, y-7.4, x+6.5, y-9)
+		star.Close()
+		p.FillPath(&star, c)
 	case "speed":
 		arc(0, 2, 7, math.Pi, 2*math.Pi)
 		path(pair(-7, 2), pair(-7, 5), pair(7, 5), pair(7, 2))

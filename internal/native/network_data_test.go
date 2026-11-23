@@ -19,6 +19,7 @@ func TestNativeWindowNetworkDataAndDNSQuery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	clickPage := pageClicker(t, v)
 	active = v
 	defer func() { active = nil; v.dispose() }()
 	find := func(text string) *widget {
@@ -72,14 +73,14 @@ func TestNativeWindowNetworkDataAndDNSQuery(t *testing.T) {
 		t.Fatal("network log first page")
 	}
 	body, list := v.body, v.logContainer
-	find("下一页").click()
+	clickPage("Next page")
 	waitJob(t, u)
 	pump()
 	if v.body != body || v.logContainer != list || u.networkPolling.Load() || u.networkPage.Number != 1 {
 		t.Fatal("log pagination rebuilt page")
 	}
 	for i := 2; i < 16; i++ {
-		find("下一页").click()
+		clickPage("Next page")
 		waitJob(t, u)
 		pump()
 	}
@@ -211,8 +212,8 @@ func TestNativeWindowNetworkDataAndDNSQuery(t *testing.T) {
 	if u.field("page.config-files").Text() != "0" {
 		t.Fatal("config file list is not paginated")
 	}
-	// English controls keep their source text for callbacks and tests.
-	find("下一页").click()
+	// Select a numbered page through the Fego control in the English UI.
+	clickPage("Page 2")
 	pump()
 	found = false
 	for _, w := range v.widgets {

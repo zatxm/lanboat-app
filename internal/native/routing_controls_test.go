@@ -19,6 +19,7 @@ func TestNativeWindowRoutingControls(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	clickPage := pageClicker(t, v)
 	active = v
 	defer func() { active = nil; v.dispose() }()
 	find := func(text string) *widget {
@@ -62,7 +63,7 @@ func TestNativeWindowRoutingControls(t *testing.T) {
 		t.Fatal("truncated default rules", rows, len(entries))
 	}
 	for n := 1; n < (len(entries)+pageSize-1)/pageSize; n++ {
-		find("下一页").click()
+		clickPage("Next page")
 		pump()
 	}
 	foundLast := false

@@ -37,7 +37,7 @@ func (v *nativeView) nodeField(spec profile.Field) *widget {
 			w.setClasses(classes)
 		}
 		v.inputs[id] = w
-		return v.box("field", true, 12, false, v.label(title, "field-label"), w)
+		return v.nodeRow(title, w)
 	}
 	if spec.Kind == "choice" {
 		options := make([]option, 0, len(spec.Choices))
@@ -77,16 +77,16 @@ func (v *nativeView) nodeField(spec profile.Field) *widget {
 			w.setTooltip(spec.Hint)
 		}
 		v.inputs[id] = w
-		return v.box("field", false, 7, false, v.label(title, "field-label"), w)
+		return v.nodeRow(title, w)
 	}
 	if spec.Kind == "multiline" {
-		return v.box("field", false, 7, false, v.label(title, "field-label"), v.input(id, spec.Placeholder, true, false, false))
+		return v.nodeRow(title, v.input(id, spec.Placeholder, true, false, false))
 	}
 	var row *widget
 	if spec.Hint == "" {
 		row = v.field(id, title, spec.Placeholder, spec.Secret)
 	} else {
-		row = v.box("field", false, 7, false, v.label(title, "field-label"), v.box("", true, 12, false, v.box("", false, 0, true, v.input(id, spec.Placeholder, false, spec.Secret, false)), v.label(spec.Hint, "help")))
+		row = v.nodeRow(title, v.box("", true, 12, false, v.box("", false, 0, true, v.input(id, spec.Placeholder, false, spec.Secret, false)), v.label(spec.Hint, "help")))
 	}
 	if spec.Key == "alpn" {
 		v.inputs[id].event = func(event, value string) {
@@ -102,7 +102,7 @@ func (v *nativeView) nodeField(spec profile.Field) *widget {
 
 func (v *nativeView) shadowsocksFields(box *widget) {
 	u := v.ui
-	v.pack(box, v.box("", true, 24, false, v.box("", false, 0, true, v.field("server", "地址 *", "域名或IP", false)), v.field("nodePort", "端口 *", "1–65535", false)))
+	v.pack(box, v.field("server", "地址 *", "域名或IP", false), v.field("nodePort", "端口 *", "1–65535", false))
 	password := "密码 *"
 	if u.draft.ID != "" {
 		password = "密码（留空保留原密码）"
@@ -119,7 +119,7 @@ func (v *nativeView) shadowsocksFields(box *widget) {
 		}
 	})
 	v.inputs["method"] = w
-	v.pack(box, v.box("field", false, 7, false, v.label("算法", "field-label"), w))
+	v.pack(box, v.nodeRow("算法", w))
 	fields := profile.ShadowsocksFields(u.draft)
 	var obfsFields []profile.Field
 	for _, field := range fields[4:] {
@@ -141,7 +141,7 @@ func (v *nativeView) shadowsocksFields(box *widget) {
 	}
 	w = v.selectWidget(plugin, plugins, false, func(value string) { u.changeSSChoice("plugin", value) })
 	v.inputs["plugin"] = w
-	v.pack(box, v.box("field", false, 7, false, v.label("插件", "field-label"), w))
+	v.pack(box, v.nodeRow("插件", w))
 	var pluginFields []profile.Field
 	for _, field := range fields {
 		if strings.HasPrefix(field.Key, "plugin-opts.") {

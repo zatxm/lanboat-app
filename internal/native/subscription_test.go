@@ -68,6 +68,14 @@ func TestNativeWindowSubscriptionForm(t *testing.T) {
 		}
 	}
 	checkProtocolLayout()
+	edge := v.inputs["protocol"].pointer.Bounds()
+	for _, key := range []string{"subUA", "subFilter", "subURL", "subUDP", "subKeepRules", "name"} {
+		w := v.inputs[key]
+		r := w.pointer.Bounds()
+		if r.X != edge.X || !hasClass(w.classes, "switch") && r.W != edge.W {
+			t.Errorf("misaligned field %s: %v, expected edges of %v", key, r, edge)
+		}
+	}
 	for _, key := range []string{"subUDP", "subInsecure", "subFastOpen"} {
 		w := v.inputs[key]
 		if len(w.options) != 0 || !strings.Contains(w.classes, "switch") || u.field(key).Text() != "false" {

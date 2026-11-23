@@ -200,7 +200,7 @@ func TestNativeWindow(t *testing.T) {
 				order = append(order, action.widget.text)
 			}
 		}
-		if strings.Join(order, ",") != "更新订阅,延迟检测,自动选择,订阅详情,分享订阅,删除订阅" {
+		if strings.Join(order, ",") != "更新订阅,自动选择,延迟检测,订阅详情,分享订阅,删除订阅" {
 			t.Fatal("subscription action order", order)
 		}
 	}

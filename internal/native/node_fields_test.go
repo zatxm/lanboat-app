@@ -402,7 +402,7 @@ func TestNativeWindowHomeDeleteIconsAndLatencyScope(t *testing.T) {
 	}
 	action.click()
 	pump()
-	if u.confirm == nil || u.confirm.kind != "node" {
+	if u.confirm == nil || u.confirm.kind != "node" || u.popup == nil || u.popup.title != "删除节点" {
 		t.Fatal("delete did not confirm")
 	}
 	u.deleteConfirmed()
@@ -434,13 +434,13 @@ func TestNativeWindowHomeDeleteIconsAndLatencyScope(t *testing.T) {
 		}
 	}
 	if auto == nil || auto.icon != "auto" || !hasClass(auto.parent.classes, "group-row") ||
-		!strings.Contains(auto.tooltip, "已关闭") || auto.iconColor != lanboatTheme(v.theme).Muted {
+		auto.tooltip != "自动选择延迟最低的服务器" || auto.iconColor != lanboatTheme(v.theme).Muted {
 		t.Fatal("subscription header lacks the off state and tooltip")
 	}
 	auto.click()
 	waitJob(t, u)
 	pump()
-	if !hasClass(auto.classes, "auto-select-on") || !strings.Contains(auto.tooltip, "已开启") ||
+	if !hasClass(auto.classes, "auto-select-on") || auto.tooltip != "自动选择延迟最低的服务器" ||
 		auto.iconColor != lanboatTheme(v.theme).Accent || !u.state.Config.Settings.AutoSelectEnabled(group) ||
 		u.state.Config.Settings.AutoSelectEnabled("") {
 		t.Fatal("enabling the subscription did not update its header independently")

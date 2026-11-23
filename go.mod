@@ -8,7 +8,7 @@ require (
 	github.com/miekg/dns v1.1.73
 	github.com/sagernet/sing v0.9.6
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
-	github.com/zatxm/fego/v26 v26.1122.113620
+	github.com/zatxm/fego/v26 v26.1122.235822
 	github.com/zatxm/lanboat-allinone/v26 v26.1122.170450
 	github.com/zatxm/lumberjack/v2 v2.0.0
 	go.uber.org/zap v1.28.0

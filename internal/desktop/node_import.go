@@ -118,35 +118,11 @@ func (a *App) Import(content string) (int, error) {
 				}
 			}
 			if err == nil && (parsed.Scheme == "http" || parsed.Scheme == "https") && parsed.Hostname() != "" && parsed.User == nil {
-				address := githubRaw(line)
-				parsed, _ = url.Parse(address)
-				if name == "" {
-					name = parsed.Hostname()
-				}
-				if parsed.Hostname() == "raw.githubusercontent.com" && name == parsed.Hostname() {
-					name = path.Base(parsed.Path)
-				}
-				sub := profile.Subscription{ID: profile.ID(), Name: name, URL: address, Password: password, KeepRules: true}
-				if err := sub.Validate(); err != nil {
-					return 0, err
-				}
-				payload, err := a.downloadSubscription(sub)
-				if err != nil {
-					return 0, fmt.Errorf("订阅 %s：%w", name, err)
-				}
-				payload, err = a.expandClashProviders(payload, sub)
+				group, err := a.subscriptionImportGroup(line, name, password, true)
 				if err != nil {
 					return 0, err
 				}
-				nodes, rules, err := profile.ParseSubscription(payload, sub, "[Rule]\n")
-				if err != nil {
-					return 0, fmt.Errorf("订阅 %s：%w", name, err)
-				}
-				sub.UpdatedAt = time.Now().Format(time.RFC3339)
-				for i := range nodes {
-					nodes[i].Source = sub.ID
-				}
-				groups = append(groups, importGroup{sub, nodes, rules})
+				groups = append(groups, group)
 			} else {
 				local = append(local, line)
 			}
@@ -166,6 +142,52 @@ func (a *App) Import(content string) (int, error) {
 	if len(groups) == 0 {
 		return 0, errors.New("没有找到可导入节点")
 	}
+	return a.commitImport(groups)
+}
+
+func (a *App) ImportSubscription(address string, keepRules bool) (int, error) {
+	group, err := a.subscriptionImportGroup(address, "", "", keepRules)
+	if err != nil {
+		return 0, err
+	}
+	return a.commitImport([]importGroup{group})
+}
+
+func (a *App) subscriptionImportGroup(address, name, password string, keepRules bool) (importGroup, error) {
+	address = githubRaw(address)
+	parsed, err := url.Parse(address)
+	if err == nil {
+		if name == "" {
+			name = parsed.Hostname()
+		}
+		if name == parsed.Hostname() && name == "raw.githubusercontent.com" {
+			name = path.Base(parsed.Path)
+		}
+	}
+	sub := profile.Subscription{ID: profile.ID(), Name: name, URL: address, Password: password, KeepRules: keepRules}
+	if err := sub.Validate(); err != nil {
+		return importGroup{}, err
+	}
+	payload, err := a.downloadSubscription(sub)
+	if err != nil {
+		return importGroup{}, fmt.Errorf("订阅 %s：%w", name, err)
+	}
+	payload, err = a.expandClashProviders(payload, sub)
+	if err != nil {
+		return importGroup{}, err
+	}
+	nodes, rules, err := profile.ParseSubscription(payload, sub, "[Rule]\n")
+	if err != nil {
+		return importGroup{}, fmt.Errorf("订阅 %s：%w", name, err)
+	}
+	sub.UpdatedAt = time.Now().Format(time.RFC3339)
+	for i := range nodes {
+		nodes[i].Source = sub.ID
+	}
+	return importGroup{sub, nodes, rules}, nil
+}
+
+func (a *App) commitImport(groups []importGroup) (int, error) {
 	a.connectionMu.Lock()
 	defer a.connectionMu.Unlock()
 	a.mu.Lock()

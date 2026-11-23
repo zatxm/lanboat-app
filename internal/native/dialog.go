@@ -82,7 +82,11 @@ func wrapDialogText(text string, columns int) string {
 func (v *nativeView) syncPopup() {
 	u := v.ui
 	if u.confirm != nil && (u.popup == nil || u.popup.kind == "confirm" && u.popup.deletion != u.confirm) {
-		u.popup = &popup{kind: "confirm", title: "确认", deletion: u.confirm}
+		title := "确认"
+		if u.confirm.kind == "node" {
+			title = "删除节点"
+		}
+		u.popup = &popup{kind: "confirm", title: title, deletion: u.confirm}
 	}
 	if u.confirm == nil && u.popup != nil && u.popup.kind == "confirm" {
 		u.popup = nil
@@ -152,7 +156,7 @@ func (v *nativeView) syncPopup() {
 				prompt = v.translate(prompt)
 				confirmClass := "primary icon-check"
 				if d.kind != "backup-restore" {
-					confirmClass += " danger"
+					confirmClass = "danger icon-check"
 				}
 				v.pack(box, v.dataLabel(wrapDialogText(prompt, 54), "node-name"), v.spacer(), v.box("", true, 12, false, v.spacer(), v.button("取消", "secondary icon-close", false, false, u.closePopup), v.button("确认", confirmClass, false, false, func() {
 					if d.run != nil {

@@ -60,7 +60,10 @@ func TestNativeWindowRoutingLayout(t *testing.T) {
 			t.Fatal("branding still occupies the sidebar")
 		}
 	}
-	u.editNode(profile.Node{Type: "vmess"})
+	// Opening the XHTTP options makes the compact row layout exceed the viewport.
+	n := profile.Node{Type: "vmess"}
+	n.SetOption("network", "xhttp")
+	u.editNode(n)
 	pumpUI()
 	scroll := v.editorScroll
 	if scroll == nil {

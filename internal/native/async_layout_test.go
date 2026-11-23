@@ -136,7 +136,7 @@ func TestNativeWindowAsyncAndPagination(t *testing.T) {
 	u.openPage("rules")
 	pumpUI()
 	for _, c := range v.controls {
-		if c.widget.text == "上一页" || c.widget.text == "下一页" {
+		if c.widget.classes == "page-bar" {
 			t.Fatal("empty rules show pagination")
 		}
 	}

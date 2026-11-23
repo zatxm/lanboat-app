@@ -282,11 +282,7 @@ func (v *nativeView) create(kind string, p props) *widget {
 			}
 			w.pointer.Password(p.secret).Placeholder(v.translate(p.placeholder)).OnChange(func(val string) { w.value = val; w.dispatch("change", val) })
 			if hasClass(p.classes, "search-input") {
-				// Clip the input's built-in outline and let the single outer field
-				// outline enclose both the magnifier and editable text.
-				// Fego positions single-line text 10px from the input's top.
-				w.content = w.pointer.Height(35).Radius(0).Label(v.translate("搜索节点"))
-				w.pointer = ui.Box(w.content).Padding(-1).Clip()
+				w.pointer.Label(v.translate("搜索节点"))
 			}
 		}
 	case "select":
@@ -665,8 +661,8 @@ func (d eventView) Event(e fego.Event) {
 		compact := float32(e.Width)/max(1, e.Scale) < 940
 		if compact != v.compact {
 			v.compact = compact
-			if v.window != nil && v.ui.editor == "" && v.ui.detail == "" &&
-				(v.ui.page == "home" || v.ui.page == "data") {
+			if v.window != nil && (v.ui.editor == "import" || v.ui.editor == "" && v.ui.detail == "" &&
+				(v.ui.page == "home" || v.ui.page == "data")) {
 				v.render()
 			}
 		}

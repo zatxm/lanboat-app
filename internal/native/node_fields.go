@@ -1,10 +1,38 @@
 package native
 
 import (
+	"strings"
+
+	"github.com/zatxm/fego/v26/ui"
 	"github.com/zatxm/lanboat-app/internal/engine"
 	"github.com/zatxm/lanboat-app/internal/profile"
-	"strings"
 )
+
+func (v *nativeView) nodeRow(title string, control *widget) *widget {
+	label := v.box("node-field-key", true, 0, false, v.label(title, "field-label"))
+	label.pointer.Justify(ui.End)
+	if !hasClass(control.classes, "switch") {
+		control.setExpand(true)
+	}
+	return v.box("field", true, 12, false, label, control)
+}
+
+// Fego measures translated labels in the actual window font. Include the
+// inset of nested option groups so their controls also share the same edge.
+func (v *nativeView) alignNodeFields() {
+	var keys []*ui.Element
+	var right float32
+	for _, w := range v.widgets {
+		if w.classes == "node-field-key" {
+			r := w.pointer.Bounds()
+			right = max(right, r.X+r.W)
+			keys = append(keys, w.pointer)
+		}
+	}
+	for _, key := range keys {
+		key.Width(right - key.Bounds().X)
+	}
+}
 
 func conditionalNodeField(key string) bool {
 	switch key {
@@ -46,7 +74,7 @@ func (v *nativeView) packNodeFields(box *widget, fields []profile.Field) {
 func (v *nativeView) detailedNodeFields(box *widget) {
 	u := v.ui
 	if u.draft.Kind() != "tailscale" {
-		v.pack(box, v.box("", true, 24, false, v.box("", false, 0, true, v.field("server", "地址 *", "域名或IP", false)), v.field("nodePort", "端口 *", "1–65535", false)))
+		v.pack(box, v.field("server", "地址 *", "域名或IP", false), v.field("nodePort", "端口 *", "1–65535", false))
 	}
 	fields := profile.NodeFields(u.draft)
 	for len(fields) > 0 && (fields[0].Key == "username" || (u.draft.Kind() == "tuic" || u.draft.Kind() == "juicity") && (fields[0].Key == "version" || fields[0].Key == "uuid")) {

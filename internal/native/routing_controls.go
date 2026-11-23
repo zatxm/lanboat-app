@@ -169,7 +169,7 @@ func (v *nativeView) routingRuleFields(box *widget) {
 	v.pack(box, v.selectField("匹配类型", u.field("route.type").Text(), routingTypes, func(s string) { u.field("route.type").SetText(s); value.setPlaceholder(ruleHint(s)) }),
 		v.box("field", false, 7, false, v.label("匹配内容", "field-label"), value), v.policySelect(u.field("route.action").Text(), func(s string) { u.field("route.action").SetText(s) }), v.formSwitch("route.noResolve", "不解析域名"), v.formSwitch("route.disabled", "停用规则"))
 }
-func (v *nativeView) formSwitch(key, title string) *widget {
+func (v *nativeView) switchInput(key, title string) *widget {
 	u := v.ui
 	b := v.button(title, "switch", false, false, func() { u.field(key).SetText(strconv.FormatBool(u.field(key).Text() != "true")) })
 	b.update = func() {
@@ -179,7 +179,12 @@ func (v *nativeView) formSwitch(key, title string) *widget {
 		}
 		b.setClasses(class)
 	}
-	return v.box("", true, 12, false, v.label(title, "node-name"), v.spacer(), b)
+	v.inputs[key] = b
+	return b
+}
+
+func (v *nativeView) formSwitch(key, title string) *widget {
+	return v.box("", true, 12, false, v.label(title, "node-name"), v.spacer(), v.switchInput(key, title))
 }
 func (v *nativeView) routingControlPage() {
 	u := v.ui
