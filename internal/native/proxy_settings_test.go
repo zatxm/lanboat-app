@@ -36,6 +36,25 @@ func TestNativeWindowProxySettings(t *testing.T) {
 		v.send(fego.Event{Kind: fego.PointerUp, X: x, Y: y, Button: 1})
 		pump()
 	}
+	checkSwitchHint := func(key, title, hintText string) {
+		t.Helper()
+		toggle := v.inputs["proxy."+key]
+		var label, hint *widget
+		for _, w := range v.widgets {
+			if w.text == title && w.parent != nil && w.parent.parent == toggle.parent {
+				label = w
+			} else if w.text == hintText {
+				hint = w
+			}
+		}
+		if label == nil || hint == nil || hint.parent != toggle.parent {
+			t.Fatal("missing inline proxy switch hint", title, hintText)
+		}
+		l, r, h := label.pointer.Bounds(), toggle.pointer.Bounds(), hint.pointer.Bounds()
+		if l.X != v.popupRoot.pointer.Bounds().X+18 || r.X < l.X+l.W+11 || r.X > l.X+l.W+13 || h.X < r.X+r.W {
+			t.Fatalf("proxy switch row has extra spacing or misplaced hint: %v %v %v", l, r, h)
+		}
+	}
 	checkRows := func(keys, labels []string) {
 		t.Helper()
 		var columnX, width, previousBottom float32
@@ -44,13 +63,18 @@ func TestNativeWindowProxySettings(t *testing.T) {
 			if input == nil {
 				t.Fatalf("missing proxy input %q", key)
 			}
+			for parent := input.parent; parent != v.popupRoot; parent = parent.parent {
+				if parent == nil || hasClass(parent.classes, "option-group") {
+					t.Fatalf("unexpected frame around proxy field %q", key)
+				}
+			}
 			r := input.pointer.Bounds()
 			if r.W <= 0 || i > 0 && (r.X != columnX || r.W != width || r.Y < previousBottom) {
 				t.Fatalf("proxy input %q is out of its column or row: %+v", key, r)
 			}
 			var label *widget
 			for _, w := range v.widgets {
-				if w.parent == input.parent && w.text == labels[i] {
+				if w.parent != nil && w.parent.parent == input.parent && w.text == labels[i] {
 					label = w
 					break
 				}
@@ -59,7 +83,7 @@ func TestNativeWindowProxySettings(t *testing.T) {
 				t.Fatalf("proxy label %q is not in the input row", labels[i])
 			}
 			l := label.pointer.Bounds()
-			if dy := (l.Y + l.H/2) - (r.Y + r.H/2); dy < -1 || dy > 1 || l.X+l.W >= r.X {
+			if dy, gap := (l.Y+l.H/2)-(r.Y+r.H/2), r.X-l.X-l.W; dy < -1 || dy > 1 || gap < 11 || gap > 13 {
 				t.Fatalf("proxy label %q is not next to its input: %+v %+v", labels[i], l, r)
 			}
 			columnX, width, previousBottom = r.X, r.W, r.Y+r.H
@@ -99,7 +123,9 @@ func TestNativeWindowProxySettings(t *testing.T) {
 	}
 	u.editProxy("sharing")
 	pump()
+	checkSwitchHint("lan", "允许局域网设备连接", "仅本机可连接")
 	clickPointer(button("允许局域网设备连接"))
+	checkSwitchHint("lan", "允许局域网设备连接", "使用本机局域网IP和代理端口连接")
 	auth := button("访问认证")
 	clickPointer(auth)
 	x, y, width, _ = auth.bounds()
@@ -108,6 +134,9 @@ func TestNativeWindowProxySettings(t *testing.T) {
 		t.Fatal("switch did not toggle or clicking left a focus background")
 	}
 	checkRows([]string{"username", "password"}, []string{"用户", "密码"})
+	if v.inputs["proxy.username"].pointer.Bounds().X != auth.pointer.Bounds().X {
+		t.Fatal("sharing switch and credentials do not share a column")
+	}
 	v.inputs["proxy.username"].edit("local-user")
 	v.inputs["proxy.password"].edit("private-key")
 	button("访问认证").click()
@@ -122,9 +151,13 @@ func TestNativeWindowProxySettings(t *testing.T) {
 	pump()
 	u.editProxy("upstream")
 	pump()
+	checkSwitchHint("upstream", "启用前置代理", "通过前置代理连接节点，直连流量不经过它")
 	button("启用前置代理").click()
 	pump()
 	checkRows([]string{"type", "server", "upstreamPort", "upstreamUser", "upstreamPassword"}, []string{"类型", "地址", "端口", "用户", "密码"})
+	if v.inputs["proxy.type"].pointer.Bounds().X != v.inputs["proxy.upstream"].pointer.Bounds().X {
+		t.Fatal("upstream switch and fields do not share a column")
+	}
 	if u.field("proxy.type").Text() != "socks5" || v.inputs["proxy.server"].placeholder != "IP" {
 		t.Fatal("upstream defaults")
 	}

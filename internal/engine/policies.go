@@ -38,7 +38,7 @@ func (e *Engine) preparePolicies(ctx context.Context, c profile.Config, config m
 			return tag, nil
 		}
 		if visiting[policy] {
-			return "", fmt.Errorf("代理分组循环引用：%s", policy)
+			return "", fmt.Errorf("策略组循环引用：%s", policy)
 		}
 		visiting[policy] = true
 		defer delete(visiting, policy)
@@ -52,7 +52,7 @@ func (e *Engine) preparePolicies(ctx context.Context, c profile.Config, config m
 				members = append(members, tag)
 			}
 			if len(members) == 0 {
-				return "", fmt.Errorf("代理分组不能为空：%s", g.Name)
+				return "", fmt.Errorf("策略组不能为空：%s", g.Name)
 			}
 			tag := "policy-group-" + g.Name
 			out := map[string]any{"type": "selector", "tag": tag, "outbounds": members, "default": members[0]}

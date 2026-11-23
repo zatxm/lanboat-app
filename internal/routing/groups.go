@@ -18,12 +18,12 @@ func parseGroup(text string) (Group, error) {
 	name, rest, ok := strings.Cut(text, "=")
 	g := Group{Name: strings.TrimSpace(name), Interval: 600, URL: "https://www.gstatic.com/generate_204"}
 	if !ok || !ValidPolicy(g.Name) || strings.EqualFold(g.Name, "proxy") || strings.EqualFold(g.Name, "direct") || strings.EqualFold(g.Name, "reject") || strings.HasPrefix(g.Name, "node:") {
-		return g, fmt.Errorf("代理分组名称无效")
+		return g, fmt.Errorf("策略组名称无效")
 	}
 	fields := strings.Split(rest, ",")
 	g.Type = strings.TrimSpace(fields[0])
 	if g.Type != "select" && g.Type != "url-test" && g.Type != "fallback" {
-		return g, fmt.Errorf("代理分组类型支持select、url-test、fallback")
+		return g, fmt.Errorf("策略组类型支持select、url-test、fallback")
 	}
 	for _, raw := range fields[1:] {
 		raw = strings.TrimSpace(raw)
@@ -31,7 +31,7 @@ func parseGroup(text string) (Group, error) {
 		if !param {
 			action, ok := policy(raw)
 			if !ok || action == "reject" {
-				return g, fmt.Errorf("代理分组成员无效")
+				return g, fmt.Errorf("策略组成员无效")
 			}
 			g.Members = append(g.Members, action)
 			continue
@@ -44,7 +44,7 @@ func parseGroup(text string) (Group, error) {
 		case "interval", "tolerance":
 			n, err := strconv.Atoi(value)
 			if err != nil || n < 0 || key == "interval" && (n < 1 || n > 86400) || key == "tolerance" && n > 65535 {
-				return g, fmt.Errorf("代理分组参数无效")
+				return g, fmt.Errorf("策略组参数无效")
 			}
 			if key == "interval" {
 				g.Interval = n
@@ -52,12 +52,12 @@ func parseGroup(text string) (Group, error) {
 				g.Tolerance = n
 			}
 		default:
-			return g, fmt.Errorf("不支持的代理分组参数%s", key)
+			return g, fmt.Errorf("不支持的策略组参数%s", key)
 		}
 	}
 	u, err := url.Parse(g.URL)
 	if len(g.Members) == 0 || len(g.Members) > 200 || err != nil || u.Hostname() == "" || u.User != nil || u.Scheme != "http" && u.Scheme != "https" {
-		return g, fmt.Errorf("代理分组成员或测试URL无效")
+		return g, fmt.Errorf("策略组成员或测试URL无效")
 	}
 	if g.Selected != "" {
 		selected, _ := policy(g.Selected)

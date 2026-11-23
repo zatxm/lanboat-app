@@ -1,11 +1,9 @@
 package native
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/zatxm/lanboat-app/internal/profile"
-	"github.com/zatxm/lanboat-app/internal/routing"
 )
 
 func TestNativeWindowAsyncAndPagination(t *testing.T) {
@@ -72,15 +70,12 @@ func TestNativeWindowAsyncAndPagination(t *testing.T) {
 	pumpUI()
 	u.openDetail("routing-groups")
 	pumpUI()
-	find("添加").click()
+	find("创建策略组").click()
 	pumpUI()
 	v.inputs["group.name"].edit("Automatic")
-	v.inputs["group.addPolicy"].edit("direct")
+	v.inputs["group.type"].edit("url-test")
 	pumpUI()
 	// Choosing a URL preset/custom value edits the group draft, not global settings.
-	u.field("group.type").SetText("url-test")
-	u.render()
-	pumpUI()
 	globalURL := u.state.Config.Settings.TestTarget()
 	find("修改").click()
 	pumpUI()
@@ -108,16 +103,15 @@ func TestNativeWindowAsyncAndPagination(t *testing.T) {
 		}
 	}
 	pumpUI()
-	if u.popup != nil || u.field("group.url").Text() != "https://example.com/latency" || u.state.Config.Settings.TestTarget() != globalURL {
+	if u.popup == nil || u.popup.kind != "routing-group" || u.field("group.url").Text() != "https://example.com/latency" || u.state.Config.Settings.TestTarget() != globalURL {
 		t.Fatal("group URL save changed global settings")
 	}
-	u.saveEditor()
+	find("确定").click()
 	waitJob(t, u)
 	pumpUI()
-	saved, _ := u.routingFile()
-	parsed, err := routing.Parse(saved.Content)
-	if err != nil || len(parsed.Groups) != 3 || !strings.Contains(saved.Content, "https://example.com/latency") {
-		t.Fatal("group URL not persisted", err, saved.Content)
+	groups := u.state.Config.PolicyGroups
+	if len(groups) != 3 || groups[2].URL != "https://example.com/latency" || u.popup != nil {
+		t.Fatal("group URL not persisted", groups)
 	}
 	u.navigate("data")
 	pumpUI()

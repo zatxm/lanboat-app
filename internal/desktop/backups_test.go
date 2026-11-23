@@ -129,6 +129,12 @@ func TestRoutingBackupContainsAndRestoresGenerations(t *testing.T) {
 	if !bytes.Equal(want, got) {
 		t.Fatal("export differs")
 	}
+	if err = os.WriteFile(first+".tar.gz", compressed.Bytes()[:compressed.Len()-4], 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = a.CreateBackup(); err == nil || len(a.Backups()) != 1 {
+		t.Fatal("corrupted archived generation must not produce a new backup")
+	}
 }
 
 func TestCorruptRoutingBackupDoesNotChangeCurrentGeneration(t *testing.T) {

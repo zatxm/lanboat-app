@@ -6,6 +6,13 @@ import (
 )
 
 func syncSubscriptionRules(c *profile.Config, sub profile.Subscription, content string, nodes []profile.Node) error {
+	if content != "" {
+		var err error
+		content, err = c.ImportPolicyGroups(content, "overlay:"+sub.ID, nodes)
+		if err != nil {
+			return err
+		}
+	}
 	overlays := make([]profile.RuleOverlay, 0, len(c.RuleOverlays)+1)
 	found := false
 	for _, old := range c.RuleOverlays {

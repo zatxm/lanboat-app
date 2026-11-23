@@ -402,7 +402,7 @@ func TestNativeWindowHomeDeleteIconsAndLatencyScope(t *testing.T) {
 	}
 	action.click()
 	pump()
-	if u.confirm == nil || u.confirm.kind != "node" || u.popup == nil || u.popup.title != "删除节点" {
+	if u.confirm == nil || u.confirm.kind != "node" || u.popup == nil || u.popup.title != "节点" {
 		t.Fatal("delete did not confirm")
 	}
 	u.deleteConfirmed()

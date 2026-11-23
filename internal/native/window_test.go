@@ -96,6 +96,83 @@ func TestHomeNodeExportAndCopy(t *testing.T) {
 	}
 }
 
+func TestHomeDeleteAllLocalNodes(t *testing.T) {
+	u := testUI(t)
+	u.notify = requestIdle
+	const bundle = `{
+		"format":"lanboat-nodes/v1", "selected":"local",
+		"nodes":[
+			{"id":"local","name":"Shown","server":"127.0.0.1","port":8388,"method":"aes-256-gcm","password":"fixture"},
+			{"id":"orphan","name":"Hidden","server":"127.0.0.1","port":8388,"method":"aes-256-gcm","password":"fixture","source":"old-feed"},
+			{"id":"remote","name":"Remote","server":"127.0.0.1","port":8388,"method":"aes-256-gcm","password":"fixture","source":"feed"}
+		],
+		"subscriptions":[{"id":"feed","name":"Feed","url":"https://example.invalid/feed"}],
+		"ruleOverlays":[
+			{"id":"local-rules","name":"Local","content":"[Rule]\nFINAL,DIRECT","nodeIds":["local"]},
+			{"id":"feed","subscriptionId":"feed","name":"Feed","content":"[Rule]\nFINAL,DIRECT","nodeIds":["remote"]}
+		]
+	}`
+	if _, err := u.backend.Import(bundle); err != nil {
+		t.Fatal(err)
+	}
+	u.state = u.backend.GetState()
+	v, err := newView(u)
+	if err != nil {
+		t.Fatal(err)
+	}
+	active = v
+	defer func() { active = nil; v.dispose() }()
+	v.render()
+	pump()
+	find := func(text string) *widget {
+		for _, c := range v.controls {
+			if c.widget.text == text {
+				return c.widget
+			}
+		}
+		return nil
+	}
+	v.inputs["search"].edit("Shown")
+	pump()
+	deleteAll := find("删除所有本地节点")
+	detect := find("延迟检测")
+	if deleteAll == nil || detect == nil || deleteAll.parent != detect.parent || deleteAll.id <= detect.id ||
+		!hasClass(deleteAll.classes, "icon-delete") || deleteAll.iconColor != lanboatTheme(v.theme).Danger {
+		t.Fatal("local group must end with the red trash button")
+	}
+	deleteAll.click()
+	pump()
+	if u.popup == nil || u.popup.title != "节点" || confirmText(u.confirm) != "确定删除所有本地节点？" || len(u.backend.GetState().Config.Nodes) != 3 {
+		t.Fatal("bulk deletion must wait for confirmation")
+	}
+	find("取消").click()
+	pump()
+	if u.popup != nil || len(u.backend.GetState().Config.Nodes) != 3 {
+		t.Fatal("cancel changed nodes")
+	}
+	deleteAll.click()
+	pump()
+	confirm := find("确认")
+	if confirm == nil || !hasClass(confirm.classes, "danger") {
+		t.Fatal("missing destructive confirmation button")
+	}
+	confirm.click()
+	waitJob(t, u)
+	pump()
+	config := u.backend.GetState().Config
+	if u.err != "" || u.popup != nil || len(config.Nodes) != 1 || config.Nodes[0].ID != "remote" || config.Selected != "remote" || len(config.Subscriptions) != 1 {
+		t.Fatal("bulk deletion must preserve and select the subscription node", u.err)
+	}
+	if len(config.RuleOverlays) != 1 || config.RuleOverlays[0].SubscriptionID != "feed" {
+		t.Fatal("bulk deletion did not preserve the subscription rule overlay")
+	}
+	v.inputs["search"].edit("")
+	pump()
+	if find("删除所有本地节点") != nil || find("删除订阅") == nil {
+		t.Fatal("only subscription actions should remain")
+	}
+}
+
 func TestNativeWindow(t *testing.T) {
 	u := testUI(t)
 	u.notify = requestIdle

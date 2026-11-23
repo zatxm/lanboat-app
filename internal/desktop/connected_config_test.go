@@ -33,6 +33,9 @@ func TestConnectedEditsProtectOnlyActiveNode(t *testing.T) {
 	if err := a.DeleteNode(n.ID); err == nil {
 		t.Fatal("active delete allowed")
 	}
+	if err := a.DeleteLocalNodes(); err == nil || len(a.GetState().Config.Nodes) != 2 {
+		t.Fatal("bulk delete must keep all nodes while a local node is active")
+	}
 	other.Name = "editable"
 	if err := a.SaveNode(other); err != nil {
 		t.Fatal(err)

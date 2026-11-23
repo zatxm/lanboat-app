@@ -82,21 +82,15 @@ func (v *nativeView) proxyPage() {
 }
 func (v *nativeView) proxyFields(box *widget, section string) {
 	u := v.ui
-	row := func(title string, control *widget) *widget {
-		label := v.label(title, "field-label")
-		label.pointer.Width(64)
-		return v.box("", true, 12, false, label, control)
-	}
 	field := func(key, title, placeholder string) *widget {
 		input := v.input("proxy."+key, placeholder, false, false, false)
 		input.setExpand(true)
-		return row(title, input)
+		return v.compactFormRow(title, input)
 	}
-	switchRow := func(title, key string, conditional *widget) *widget {
-		row := v.formSwitch("proxy."+key, title)
+	switchRow := func(title, key string, conditional *widget, trailing ...*widget) *widget {
+		b := v.switchInput("proxy."+key, title)
 		if conditional != nil {
 			conditional.setVisible(u.field("proxy."+key).Text() == "true")
-			b := v.controls[len(v.controls)-1].widget
 			original := b.event
 			b.event = func(event, value string) {
 				original(event, value)
@@ -104,17 +98,25 @@ func (v *nativeView) proxyFields(box *widget, section string) {
 				fitNativeDialog()
 			}
 		}
-		return row
+		return v.compactFormRow(title, b, trailing...)
 	}
 	switch section {
 	case "port":
 		v.pack(box, field("port", "端口", "1024–65535"), v.label("HTTP与SOCKS5共用此端口。", "help"))
 	case "sharing":
-		auth := v.box("option-group", false, 12, false,
+		hint := v.label("仅本机可连接", "help")
+		hint.update = func() {
+			text := "仅本机可连接"
+			if u.field("proxy.lan").Text() == "true" {
+				text = "使用本机局域网IP和代理端口连接"
+			}
+			hint.setText(text)
+		}
+		auth := v.box("", false, 12, false,
 			field("username", "用户", "必填"),
 			field("password", "密码", "必填"))
 		authGroup := v.box("", false, 14, false, switchRow("访问认证", "auth", auth), auth)
-		v.pack(box, switchRow("允许局域网设备连接", "lan", authGroup), v.label("关闭时仅本机可连接；开启后使用本机局域网IP和代理端口连接。", "help"), authGroup)
+		v.pack(box, switchRow("允许局域网设备连接", "lan", authGroup, hint), authGroup)
 	case "upstream":
 		hint := v.label("HTTP前置代理支持TCP；UDP协议需使用支持UDP的SOCKS5前置代理。", "help")
 		hint.setVisible(u.field("proxy.type").Text() == "http")
@@ -125,14 +127,14 @@ func (v *nativeView) proxyFields(box *widget, section string) {
 		})
 		choice.setExpand(true)
 		v.inputs["proxy.type"] = choice
-		fields := v.box("option-group", false, 12, false,
-			row("类型", choice),
+		fields := v.box("", false, 12, false,
+			v.compactFormRow("类型", choice),
 			field("server", "地址", "IP"),
 			field("upstreamPort", "端口", "1–65535"),
 			field("upstreamUser", "用户", "可选"),
 			field("upstreamPassword", "密码", "可选"),
 			hint)
-		v.pack(box, switchRow("启用前置代理", "upstream", fields), v.label("通过前置代理连接节点；直连流量不经过它。", "help"), fields)
+		v.pack(box, switchRow("启用前置代理", "upstream", fields, v.label("通过前置代理连接节点，直连流量不经过它", "help")), fields)
 	}
 	v.dialogActions(box, func() { u.saveProxySection(section) })
 }

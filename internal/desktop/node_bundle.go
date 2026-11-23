@@ -14,6 +14,7 @@ type nodeBundle struct {
 	Format        string                 `json:"format"`
 	Nodes         []profile.Node         `json:"nodes"`
 	Subscriptions []profile.Subscription `json:"subscriptions"`
+	PolicyGroups  []profile.PolicyGroup  `json:"policyGroups,omitempty"`
 	RuleOverlays  []profile.RuleOverlay  `json:"ruleOverlays,omitempty"`
 	Selected      string                 `json:"selected,omitempty"`
 }
@@ -45,6 +46,7 @@ func (a *App) importNodeBundle(data string) (int, error) {
 	}
 	sample := profile.Default()
 	sample.Nodes, sample.Subscriptions, sample.RuleOverlays, sample.Selected = b.Nodes, b.Subscriptions, b.RuleOverlays, b.Selected
+	sample.PolicyGroups = b.PolicyGroups
 	if err := sample.ValidateSnapshot(); err != nil {
 		return 0, err
 	}
@@ -73,6 +75,7 @@ func (a *App) importNodeBundle(data string) (int, error) {
 	c := a.config
 	c.Nodes = mergeIDs(c.Nodes, b.Nodes, func(n profile.Node) string { return n.ID })
 	c.Subscriptions = mergeIDs(c.Subscriptions, b.Subscriptions, func(s profile.Subscription) string { return s.ID })
+	c.PolicyGroups = profile.MergePolicyGroups(c.PolicyGroups, b.PolicyGroups)
 	c.RuleOverlays = mergeIDs(c.RuleOverlays, b.RuleOverlays, func(o profile.RuleOverlay) string { return o.ID })
 	if c.Selected == "" {
 		c.Selected = b.Selected

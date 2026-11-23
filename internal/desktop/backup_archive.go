@@ -70,12 +70,11 @@ func writeRoutingBackup(destination string, b profile.Config, root string) error
 			if err != nil {
 				return err
 			}
-			check, err := ruledata.Unpack(root, f)
+			err = ruledata.VerifyArchive(f)
 			f.Close()
 			if err != nil {
 				return fmt.Errorf("规则库压缩包无效：%w", err)
 			}
-			os.RemoveAll(check)
 		}
 	}
 	metadata, err := json.Marshal(b)
@@ -89,6 +88,7 @@ func writeRoutingBackup(destination string, b profile.Config, root string) error
 	defer os.Remove(temp.Name())
 	gz := gzip.NewWriter(temp)
 	tw := tar.NewWriter(gz)
+	buf := make([]byte, 32<<10)
 	addBytes := func(name string, data []byte) error {
 		if e := tw.WriteHeader(&tar.Header{Name: name, Mode: 0600, Size: int64(len(data)), Typeflag: tar.TypeReg}); e != nil {
 			return e
@@ -115,7 +115,7 @@ func writeRoutingBackup(destination string, b profile.Config, root string) error
 		if e != nil {
 			return e
 		}
-		_, e = io.Copy(tw, f)
+		_, e = io.CopyBuffer(tw, io.LimitReader(f, info.Size()), buf)
 		ce := f.Close()
 		if e != nil {
 			return e
@@ -195,6 +195,7 @@ func stageRoutingBackup(file, root string) (profile.Config, string, string, erro
 	}
 	total := int64(0)
 	count := 0
+	buf := make([]byte, 32<<10)
 	for {
 		h, e := tr.Next()
 		if e == io.EOF {
@@ -212,11 +213,11 @@ func stageRoutingBackup(file, root string) (profile.Config, string, string, erro
 		if len(parts) == 0 || !(rel == "current" || generationName.MatchString(parts[0]) && len(parts) > 1 || len(parts) == 1 && strings.HasSuffix(parts[0], ".tar.gz") && generationName.MatchString(strings.TrimSuffix(parts[0], ".tar.gz"))) {
 			return b, "", "", errors.New("备份内容无效")
 		}
-		total += h.Size
 		count++
-		if total > maxRoutingBackup || count > 100000 {
+		if h.Size > maxRoutingBackup-total || count > 100000 {
 			return b, "", "", errors.New("备份内容过大")
 		}
+		total += h.Size
 		dest := filepath.Join(stage, filepath.FromSlash(rel))
 		if err = os.MkdirAll(filepath.Dir(dest), 0700); err != nil {
 			return b, "", "", err
@@ -225,7 +226,7 @@ func stageRoutingBackup(file, root string) (profile.Config, string, string, erro
 		if e != nil {
 			return b, "", "", e
 		}
-		_, err = io.Copy(out, tr)
+		_, err = io.CopyBuffer(out, tr, buf)
 		ce := out.Close()
 		if err == nil {
 			err = ce
@@ -261,12 +262,11 @@ func stageRoutingBackup(file, root string) (profile.Config, string, string, erro
 			if err != nil {
 				return b, "", "", err
 			}
-			check, err := ruledata.Unpack(stage, f)
+			err = ruledata.VerifyArchive(f)
 			f.Close()
 			if err != nil {
 				return b, "", "", err
 			}
-			os.RemoveAll(check)
 		}
 	}
 	ok = true

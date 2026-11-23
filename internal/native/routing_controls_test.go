@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/zatxm/lanboat-app/internal/profile"
 	"github.com/zatxm/lanboat-app/internal/routing"
 )
 
@@ -83,12 +84,13 @@ func TestNativeWindowRoutingControls(t *testing.T) {
 	if v.editorScroll.scrollPosition(-1) == 0 || v.scroll.scrollPosition(-1) != 0 {
 		t.Fatal("rules must scroll internally")
 	}
-	find("代理分组").click()
+	find("策略组").click()
 	pump()
-	for _, c := range v.controls {
-		if c.widget.text == "添加" || c.widget.text == "删除" {
-			t.Fatal("default group actions", c.widget.text)
-		}
+	if v.title.text != "策略组" {
+		t.Fatal("policy group page title")
+	}
+	if !hasClass(find("创建策略组").classes, "icon-only") {
+		t.Fatal("shared group creation is unavailable from the default configuration")
 	}
 	u.back()
 	pump()
@@ -124,33 +126,36 @@ func TestNativeWindowRoutingControls(t *testing.T) {
 	if len(p.Rules) != 1 || len(entries) != 2 || !entries[0].Disabled {
 		t.Fatal("disable was not stored")
 	}
-	find("代理分组").click()
+	find("策略组").click()
 	pump()
-	find("添加").click()
+	find("创建策略组").click()
 	pump()
-	if v.inputs["group.addPolicy"] == nil || v.inputs["group.addPolicy"].kind != "select" {
-		t.Fatal("group policy dropdown missing")
+	if u.popup == nil || u.popup.title != "创建" || v.inputs["group.selected"] == nil {
+		t.Fatal("missing creation dialog or default policy")
 	}
-	v.inputs["group.addPolicy"].edit("direct")
-	pump()
-	if u.field("group.members").Text() != "proxy\ndirect" {
-		t.Fatal("group strategy dropdown duplicated existing member")
+	name := v.inputs["group.name"]
+	choice := v.inputs["group.selected"]
+	if name.pointer.Bounds().X != choice.pointer.Bounds().X {
+		t.Fatal("dialog fields are not aligned")
 	}
-	v.inputs["group.name"].edit("Manual group")
-	u.saveEditor()
+	choice.edit("direct")
+	name.edit("Manual group")
+	find("确定").click()
 	waitJob(t, u)
 	pump()
-	f, _ = u.routingFile()
-	p, err = routing.Parse(f.Content)
-	if err != nil || len(p.Groups) != 1 || p.Groups[0].Name != "Manual group" || u.editor != "" {
-		t.Fatal("group save", err)
+	groups := u.state.Config.PolicyGroups
+	if len(groups) != 1 || groups[0].Name != "Manual group" || groups[0].Selected != "direct" || u.popup != nil {
+		t.Fatal("shared group not saved", groups)
 	}
 	u.back()
 	pump()
 	final := v.inputs["routingFinal"]
+	if final.tooltip != "当流量没有匹配任何分流规则时，使用此策略。" {
+		t.Fatal("fallback policy tooltip")
+	}
 	next := v.next
 	scroll := v.editorScroll
-	final.edit("Manual group")
+	final.edit(groups[0].Ref())
 	waitJob(t, u)
 	pump()
 	f, _ = u.routingFile()
@@ -158,7 +163,7 @@ func TestNativeWindowRoutingControls(t *testing.T) {
 	if v.next != next || v.editorScroll != scroll {
 		t.Fatal("final policy navigated or rebuilt the page")
 	}
-	if p.Final != "Manual group" {
+	if p.Final != groups[0].Ref() {
 		t.Fatal("final group policy not applied", p.Final)
 	}
 	if err := u.backend.ActivateConfigFile(f.ID); err != nil {
@@ -177,4 +182,51 @@ func TestNativeWindowRoutingControls(t *testing.T) {
 		t.Fatal("rule test rebuilt form or missed policy", u.result)
 	}
 
+}
+
+func TestStrategyGroupPagination(t *testing.T) {
+	u := testUI(t)
+	u.notify = requestIdle
+	for i := range pageSize + 1 {
+		u.state.Config.PolicyGroups = append(u.state.Config.PolicyGroups, profile.PolicyGroup{
+			ID: fmt.Sprint(i), Group: routing.Group{Name: fmt.Sprintf("Test group %d", i), Type: "select", Members: []string{"proxy"}},
+		})
+	}
+	v, err := newView(u)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clickPage := pageClicker(t, v)
+	active = v
+	defer func() { active = nil; v.dispose() }()
+	u.openPage("config")
+	u.openDetail("routing-groups")
+	pump()
+	visible := func(name string) bool {
+		for _, w := range v.widgets {
+			if w.text == name {
+				return true
+			}
+		}
+		return false
+	}
+	last := fmt.Sprintf("Test group %d", pageSize)
+	if visible(last) {
+		t.Fatal("all groups rendered on the first page")
+	}
+	clickPage("Next page")
+	pump()
+	if !visible(last) || visible("Test group 0") {
+		t.Fatal("next page did not show the remaining group")
+	}
+	for _, w := range v.widgets {
+		if hasClass(w.classes, "list-frame") {
+			_, _, _, height := w.bounds()
+			if height < listRowHeight || height > listRowHeight+4 {
+				t.Fatalf("a one-row page does not fit its content: %d", height)
+			}
+			return
+		}
+	}
+	t.Fatal("missing list frame")
 }

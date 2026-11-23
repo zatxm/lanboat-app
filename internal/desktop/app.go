@@ -137,6 +137,7 @@ func (a *App) GetState() State {
 	c.Files = append([]profile.ConfigFile{}, c.Files...)
 	c.Modules = append([]profile.Module{}, c.Modules...)
 	c.Rules = append([]profile.Rule{}, c.Rules...)
+	c.PolicyGroups = profile.ClonePolicyGroups(c.PolicyGroups)
 	c.Subscriptions = append([]profile.Subscription{}, c.Subscriptions...)
 	c.RuleOverlays = append([]profile.RuleOverlay{}, c.RuleOverlays...)
 	for i := range c.RuleOverlays {
@@ -209,7 +210,8 @@ func (a *App) GetLogs() []LogEntry { return a.logs.List() }
 
 func (a *App) commit(c profile.Config) error { return a.commitWithRuleData(c, false, nil) }
 func (a *App) commitWithRuleData(c profile.Config, force bool, restoreData func() error) error {
-	if !reflect.DeepEqual(a.config.RuleOverlays, c.RuleOverlays) {
+	overlaysChanged := !reflect.DeepEqual(a.config.RuleOverlays, c.RuleOverlays)
+	if overlaysChanged {
 		if err := profile.ValidateRuleOverlays(c.RuleOverlays); err != nil {
 			return err
 		}
@@ -220,6 +222,11 @@ func (a *App) commitWithRuleData(c profile.Config, force bool, restoreData func(
 	filesChanged := !reflect.DeepEqual(a.config.Files, c.Files)
 	if filesChanged || a.config.ActiveFile != c.ActiveFile {
 		if err := profile.ValidateFiles(c); err != nil {
+			return err
+		}
+	}
+	if filesChanged || overlaysChanged || !reflect.DeepEqual(a.config.Rules, c.Rules) || !reflect.DeepEqual(a.config.PolicyGroups, c.PolicyGroups) {
+		if err := c.ValidatePolicyGroups(); err != nil {
 			return err
 		}
 	}
@@ -375,6 +382,38 @@ func (a *App) DeleteNode(id string) error {
 	}
 	removeOverlayNodes(&c, map[string]bool{id: true})
 	if c.Selected == id {
+		c.Selected = ""
+		if len(c.Nodes) > 0 {
+			c.Selected = c.Nodes[0].ID
+		}
+	}
+	return a.commit(c)
+}
+
+func (a *App) DeleteLocalNodes() error {
+	a.connectionMu.Lock()
+	defer a.connectionMu.Unlock()
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	c := a.config
+	c.Nodes = []profile.Node{}
+	deleted := map[string]bool{}
+	for _, n := range a.config.Nodes {
+		if c.NodeGroup(n) == "" {
+			deleted[n.ID] = true
+		} else {
+			c.Nodes = append(c.Nodes, n)
+		}
+	}
+	if len(deleted) == 0 {
+		return nil
+	}
+	if dns := c.Settings.DNS; dns != nil && dns.ProxyRoute == "node" && deleted[dns.ProxyNode] {
+		return errors.New("正在使用的DNS出站节点不能修改或删除")
+	}
+	removeOverlayNodes(&c, deleted)
+	if deleted[c.Selected] {
 		c.Selected = ""
 		if len(c.Nodes) > 0 {
 			c.Selected = c.Nodes[0].ID

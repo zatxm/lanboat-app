@@ -1,6 +1,7 @@
 package native
 
 import (
+	"fmt"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -97,7 +98,7 @@ func TestNativeWindowRoutingLayout(t *testing.T) {
 	}
 	var regionLabel, regionSelect, summary *widget
 	for _, w := range v.widgets {
-		if w.text == "国家和地区" && w.kind == "label" {
+		if w.text == "国家/地区" && w.kind == "label" {
 			regionLabel = w
 		}
 		if strings.Contains(w.classes, "region-select") {
@@ -123,6 +124,18 @@ func TestNativeWindowRoutingLayout(t *testing.T) {
 	centerDelta := selectBox.Y + selectBox.H/2 - (labelBox.Y + labelBox.H/2)
 	if math.Abs(float64(centerDelta)) > 1 {
 		t.Fatalf("country label and selector are on different lines: center offset=%g", centerDelta)
+	}
+	for code, want := range map[string]string{"hk": "中国香港", "mo": "中国澳门", "tw": "中国台湾"} {
+		found := false
+		for _, item := range regionSelect.options {
+			found = found || item.value == code && item.label == strings.ToUpper(code)+" · "+want
+		}
+		if !found {
+			t.Fatalf("region %s should display %s", code, want)
+		}
+	}
+	if labelBox.X <= find("自定义规则").pointer.Bounds().X || !hasClass(find("新增规则配置").classes, "icon-only") || !hasClass(find("设置").classes, "icon-only") {
+		t.Fatal("routing toolbar action order or icon styling")
 	}
 	rx, _, rw, _ := find("default.conf").bounds()
 	sx, _, sw, _ = find("default.conf").parent.bounds()
@@ -188,6 +201,22 @@ func TestNativeWindowRoutingLayout(t *testing.T) {
 	defer server.Close()
 	v.inputs["importMethod"].edit("url")
 	pumpUI()
+	nameBox := v.inputs["fileName"].pointer.Bounds()
+	for _, key := range []string{"importMethod", "importURL"} {
+		r := v.inputs[key].pointer.Bounds()
+		if r.X != nameBox.X || r.W != nameBox.W {
+			t.Fatalf("configuration field %s differs in width or position: %v vs %v", key, r, nameBox)
+		}
+	}
+	inline := func(input, button *widget) {
+		t.Helper()
+		x, y, w, h := input.bounds()
+		bx, by, _, bh := button.bounds()
+		if bx <= x+w || math.Abs(float64((2*y+h)-(2*by+bh))) > 2 {
+			t.Fatalf("button %q does not follow its field on the same row", button.text)
+		}
+	}
+	inline(v.inputs["importURL"], find("解析"))
 	v.inputs["importURL"].edit(server.URL + "/preview.conf")
 	find("解析").click()
 	pumpUI()
@@ -209,6 +238,7 @@ func TestNativeWindowRoutingLayout(t *testing.T) {
 	pump()
 	v.inputs["importMethod"].edit("file")
 	pumpUI()
+	inline(v.inputs["importMethod"], find("选择文件"))
 	if !strings.Contains(find("选择文件").classes, "icon-upload") {
 		t.Fatal("file upload must use the upward upload icon")
 	}
@@ -227,6 +257,27 @@ func TestNativeWindowRoutingLayout(t *testing.T) {
 	if u.editor != "" || len(u.state.Config.Files) != 3 {
 		t.Fatal("preview could not be saved")
 	}
+	find("测试规则").click()
+	pumpUI()
+	ip := v.inputs["matchIP"]
+	var ipHint *widget
+	for _, w := range v.widgets {
+		if strings.HasPrefix(w.text, "需要测试IP规则时") {
+			ipHint = w
+		}
+	}
+	ipBox := ip.pointer.Bounds()
+	if ipHint == nil || ipHint.pointer.Bounds().Y < ipBox.Y+ipBox.H || ipHint.pointer.Bounds().X != ipBox.X || !strings.HasSuffix(ipHint.text, "，域名可不填") {
+		t.Fatal("IP-only help should be under the IP field")
+	}
+	ip.edit("203.0.113.17")
+	find("测试规则").click()
+	pumpUI()
+	if u.result == "" || u.popup != nil {
+		t.Fatal("IP-only rule test should produce a result")
+	}
+	u.back()
+	pumpUI()
 	find("自定义规则").click()
 	pumpUI()
 	if v.routing != nil {
@@ -234,16 +285,35 @@ func TestNativeWindowRoutingLayout(t *testing.T) {
 	}
 	find("添加").click()
 	pumpUI()
+	if u.page != "rules" || u.editor != "" || u.popup == nil || u.popup.title != "添加规则" {
+		t.Fatal("add rule should be a popup on the list")
+	}
 	for _, c := range v.controls {
 		if c.widget.text == "取消" && c.widget.visible {
 			t.Fatal("add rule still has cancel")
 		}
 	}
 	v.inputs["ruleValue"].edit("custom.invalid")
-	v.save.click()
+	find("确定").click()
 	pumpUI()
-	if u.editor != "" || u.page != "rules" || len(u.state.Config.Rules) != 1 || u.notice != "" {
+	if u.popup != nil || u.editor != "" || u.page != "rules" || len(u.state.Config.Rules) != 1 || u.notice != "" {
 		t.Fatal("add rule did not return quietly to the list")
+	}
+	find("停用").click()
+	pumpUI()
+	if enable := find("启用"); enable.icon != "close" || enable.iconColor != lanboatTheme(v.theme).Danger {
+		t.Fatal("disabled rule should show a red cross")
+	}
+	find("编辑").click()
+	pumpUI()
+	if u.popup == nil || u.popup.title != "编辑规则" || v.inputs["ruleValue"].nativeText() != "custom.invalid" {
+		t.Fatal("edit rule should show the existing value in a popup")
+	}
+	v.inputs["ruleValue"].edit("changed.invalid")
+	find("确定").click()
+	pumpUI()
+	if u.popup != nil || len(u.state.Config.Rules) != 1 || u.state.Config.Rules[0].Value != "changed.invalid" || !u.state.Config.Rules[0].Disabled {
+		t.Fatal("edit did not preserve rule identity and disabled state")
 	}
 	for _, c := range v.controls {
 		if c.widget.text == "上移" || c.widget.text == "删除" {
@@ -262,4 +332,37 @@ func TestNativeWindowRoutingLayout(t *testing.T) {
 	if len(u.state.Config.Rules) != 0 {
 		t.Fatal("custom rule delete failed")
 	}
+}
+
+func TestCustomRulesPaginationBoundary(t *testing.T) {
+	u := testUI(t)
+	u.page = "rules"
+	v, err := newView(u)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer v.dispose()
+	clickPage := pageClicker(t, v)
+	for i := range pageSize {
+		u.state.Config.Rules = append(u.state.Config.Rules, profile.Rule{Type: "domain", Value: fmt.Sprintf("rule-%d.invalid", i), Action: "direct"})
+	}
+	v.render()
+	for _, c := range v.controls {
+		if c.widget.classes == "page-bar" {
+			t.Fatal("40 rules fit on one page")
+		}
+	}
+	u.state.Config.Rules = append(u.state.Config.Rules, profile.Rule{Type: "domain", Value: "last.invalid", Action: "direct"})
+	v.render()
+	clickPage("Next page")
+	v.flush()
+	if u.field("page.custom-rules").Text() != "1" {
+		t.Fatal("41st rule should be on the second page")
+	}
+	for _, w := range v.widgets {
+		if w.text == "last.invalid" {
+			return
+		}
+	}
+	t.Fatal("second page is missing the last rule")
 }

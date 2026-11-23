@@ -19,12 +19,13 @@ func (u *UI) openNetworkLogs() {
 	u.fetchNetworkLogs("proxy", 0)
 }
 func (u *UI) fetchNetworkLogs(kind string, page int) {
-	if u.busy {
-		return
-	}
+	u.logRequest++
+	request := u.logRequest
+	u.networkPolling.Store(false)
 	if kind == "app" {
+		u.logControl = 0
+		u.logPending = false
 		u.networkQuery.Store(logQuery{kind, 0})
-		u.networkPolling.Store(false)
 		u.appLogPolling.Store(true)
 		u.networkPage = traffic.Page{Kind: kind}
 		u.notify()
@@ -32,14 +33,33 @@ func (u *UI) fetchNetworkLogs(kind string, page int) {
 	}
 	u.networkQuery.Store(logQuery{kind, page})
 	u.appLogPolling.Store(false)
-	u.networkPolling.Store(page == 0)
-	var result traffic.Page
-	u.savingSettings = true
-	u.submit(func() error { var err error; result, err = u.backend.NetworkLogs(kind, page); return err }, func() { u.networkPage = result; u.logQueryResult() })
-}
-func (u *UI) logQueryResult() {
-	u.networkQuery.Store(logQuery{u.networkPage.Kind, u.networkPage.Number})
+	u.logControl = u.actionID
+	u.logPending = true
 	u.notify()
+	go func() {
+		result, err := u.backend.NetworkLogs(kind, page)
+		u.post(update{background: true, apply: func() {
+			if request != u.logRequest {
+				return
+			}
+			u.logControl = 0
+			u.logPending = false
+			if u.detail != "network-logs" || u.editor != "" {
+				return
+			}
+			if err != nil {
+				u.networkQuery.Store(logQuery{u.networkPage.Kind, u.networkPage.Number})
+				u.networkPolling.Store(u.networkPage.Kind != "app" && u.networkPage.Number == 0)
+				u.appLogPolling.Store(u.networkPage.Kind == "app")
+				u.err = err.Error()
+				return
+			}
+			u.version.Add(1) // Discard older automatic log reads already in flight.
+			u.networkPage = result
+			u.networkQuery.Store(logQuery{result.Kind, result.Number})
+			u.networkPolling.Store(result.Number == 0)
+		}})
+	}()
 }
 func (u *UI) confirmClearLogs() {
 	u.confirm = &deletion{kind: "logs", name: "清空日志"}
@@ -58,7 +78,10 @@ func (v *nativeView) networkLogPage() {
 		}
 		return b
 	}
-	refresh := v.button("刷新", "link icon-only icon-refresh", false, false, func() { u.fetchNetworkLogs(u.networkPage.Kind, u.networkPage.Number) })
+	refresh := v.button("刷新", "link icon-only icon-refresh", false, false, func() {
+		q := u.networkQuery.Load().(logQuery)
+		u.fetchNetworkLogs(q.Kind, q.Page)
+	})
 	v.pack(v.body, v.box("", true, 10, false, tab("proxy", "代理日志"), tab("dns", "DNS日志"), tab("app", "应用日志"), v.spacer(), refresh, v.button("清空日志", "link icon-only icon-delete", false, false, u.confirmClearLogs)))
 	v.logContainer = v.box("", false, 0, false)
 	v.listViewport(v.logContainer)
@@ -160,7 +183,6 @@ func (v *nativeView) refreshNetworkLogs() {
 	}
 	pages := (p.Total + traffic.PageSize - 1) / traffic.PageSize
 	v.pack(v.logPager, v.pageBar(p.Number, pages, p.Total, func(next int) {
-		v.logSignature = ""
 		u.fetchNetworkLogs(p.Kind, next)
 	}))
 }

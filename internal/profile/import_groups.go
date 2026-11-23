@@ -14,11 +14,11 @@ func clashGroups(doc map[string]any, lines *[]string) (map[string]string, error)
 	for _, item := range groups {
 		g, ok := item.(map[string]any)
 		if !ok {
-			return nil, errors.New("订阅代理分组格式无效")
+			return nil, errors.New("订阅策略组格式无效")
 		}
 		name := mapString(g, "name")
 		if name == "" || names[name] != "" {
-			return nil, errors.New("订阅代理分组名称无效或重复")
+			return nil, errors.New("订阅策略组名称无效或重复")
 		}
 		names[name] = "group:" + name
 	}
@@ -27,14 +27,14 @@ func clashGroups(doc map[string]any, lines *[]string) (map[string]string, error)
 		name := mapString(g, "name")
 		typ := mapString(g, "type")
 		if typ != "select" && typ != "url-test" && typ != "fallback" {
-			return nil, fmt.Errorf("暂不支持代理分组类型 %s", typ)
+			return nil, fmt.Errorf("暂不支持策略组类型 %s", typ)
 		}
 		if err := unsupportedKeys(g, "name", "type", "proxies", "url", "interval", "tolerance", "default"); err != nil {
 			return nil, err
 		}
 		members := mapList(g, "proxies")
 		if len(members) == 0 {
-			return nil, fmt.Errorf("代理分组 %s 没有节点", name)
+			return nil, fmt.Errorf("策略组 %s 没有节点", name)
 		}
 		values := []string{names[name] + " = " + typ}
 		for _, v := range members {

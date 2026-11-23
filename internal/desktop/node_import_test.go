@@ -120,15 +120,18 @@ rules:
 		t.Fatal(count, err)
 	}
 	c := a.GetState().Config
-	if c.Nodes[0].Name != "HK" || len(c.RuleOverlays) != 1 || !strings.Contains(c.RuleOverlays[0].Content, "HK") {
+	if c.Nodes[0].Name != "HK" || len(c.RuleOverlays) != 1 || len(c.PolicyGroups) != 1 ||
+		!strings.Contains(c.RuleOverlays[0].Content, c.PolicyGroups[0].Ref()) || c.PolicyGroups[0].Members[0] != "node:"+c.Nodes[0].ID {
 		t.Fatal(c.Nodes, c.RuleOverlays)
 	}
+	ref := c.PolicyGroups[0].Ref()
 	version.Store(1)
 	if count, err = a.RefreshSubscription(c.Subscriptions[0].ID); err != nil || count != 1 {
 		t.Fatal(count, err)
 	}
 	c = a.GetState().Config
-	if c.Nodes[0].Name != "JP" || len(c.RuleOverlays) != 1 || !strings.Contains(c.RuleOverlays[0].Content, "JP") {
+	if c.Nodes[0].Name != "JP" || len(c.RuleOverlays) != 1 || len(c.PolicyGroups) != 1 || c.PolicyGroups[0].Ref() != ref ||
+		!strings.Contains(c.RuleOverlays[0].Content, ref) || c.PolicyGroups[0].Members[0] != "node:"+c.Nodes[0].ID {
 		t.Fatal(c.Nodes, c.RuleOverlays)
 	}
 }

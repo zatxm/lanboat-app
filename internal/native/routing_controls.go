@@ -1,7 +1,6 @@
 package native
 
 import (
-	"fmt"
 	"net/netip"
 	"slices"
 	"strconv"
@@ -32,11 +31,8 @@ func (u *UI) openRoutingFile(f profile.ConfigFile) {
 }
 func (u *UI) policyOptions() []option {
 	opts := slices.Clone(actions)
-	if f, ok := u.routingFile(); ok {
-		p, _ := routing.Parse(f.Content)
-		for _, g := range p.Groups {
-			opts = append(opts, option{g.Name, g.Name})
-		}
+	for _, g := range u.state.Config.PolicyGroups {
+		opts = append(opts, option{g.Ref(), g.Name})
 	}
 	for _, n := range u.state.Config.Nodes {
 		opts = append(opts, option{"node:" + n.ID, n.Name})
@@ -65,8 +61,16 @@ func (u *UI) policyLabel(value string) string {
 	if value == "DIRECT" {
 		return u.policyLabel("direct")
 	}
-	if name, ok := strings.CutPrefix(value, "policy-group-"); ok {
-		return name
+	target := strings.TrimPrefix(value, "policy-group-")
+	if strings.HasPrefix(target, "group:") {
+		for _, g := range u.state.Config.PolicyGroups {
+			if target == g.Ref() {
+				return g.Name
+			}
+		}
+	}
+	if target != value {
+		return target
 	}
 	id, ok := strings.CutPrefix(value, "node:")
 	if !ok {
@@ -216,7 +220,7 @@ func (v *nativeView) routingControlPage() {
 			})
 		}))
 	}
-	v.pack(toolbar, v.button("代理分组", "link icon-layers", false, false, func() { u.openDetail("routing-groups") }))
+	v.pack(toolbar, v.button("策略组", "link icon-layers", false, false, func() { u.openDetail("routing-groups") }))
 	if !readOnly {
 		v.pack(toolbar, v.button("添加", "primary tight-icon", true, false, func() { u.editRoutingRule(nil) }))
 	}
@@ -255,11 +259,12 @@ func (v *nativeView) routingControlPage() {
 		})
 	})
 	final.setClasses("compact final-policy")
+	final.setTooltip("当流量没有匹配任何分流规则时，使用此策略。")
 	v.controls[len(v.controls)-1].disabled = readOnly
 	if !readOnly {
 		v.inputs["routingFinal"] = final
 	}
-	v.pack(v.body, v.box("", true, 16, false, search, v.label("最终策略", "field-label tight-label"), final))
+	v.pack(v.body, v.box("", true, 16, false, search, v.label("未匹配时", "field-label tight-label"), final))
 	v.editorScroll = v.create("scroll", props{classes: "editor-scroll", expand: true})
 	v.pack(v.body, v.box("panel group list-frame", false, 0, true, v.editorScroll))
 	list := v.box("", false, 0, false)
@@ -325,161 +330,6 @@ func (v *nativeView) routingControlPage() {
 		v.pack(v.body, pager)
 	}
 }
-func (u *UI) editRoutingGroup(g *routing.Group) {
-	for k, v := range map[string]string{"line": "0", "name": "", "type": "select", "members": "proxy\ndirect", "selected": "proxy", "url": profile.TestURLs[0], "interval": "600", "tolerance": "0"} {
-		u.field("group." + k).SetText(v)
-	}
-	if g != nil {
-		for k, v := range map[string]string{"line": strconv.Itoa(g.Line), "name": g.Name, "type": g.Type, "members": strings.Join(g.Members, "\n"), "selected": g.Selected, "url": g.URL, "interval": strconv.Itoa(g.Interval), "tolerance": strconv.Itoa(g.Tolerance)} {
-			u.field("group." + k).SetText(v)
-		}
-	}
-	u.openEditor("routing-group")
-}
-func (u *UI) saveRoutingGroup() {
-	f, ok := u.routingFile()
-	if !ok {
-		return
-	}
-	interval, err := strconv.Atoi(u.field("group.interval").Text())
-	tolerance, err2 := strconv.Atoi(u.field("group.tolerance").Text())
-	if err != nil || err2 != nil {
-		u.err = "代理分组参数无效"
-		u.notify()
-		return
-	}
-	g := routing.Group{Name: strings.TrimSpace(u.field("group.name").Text()), Type: u.field("group.type").Text(), Members: strings.Split(u.field("group.members").Text(), "\n"), Selected: u.field("group.selected").Text(), URL: strings.TrimSpace(u.field("group.url").Text()), Interval: interval, Tolerance: tolerance}
-	line, _ := strconv.Atoi(u.field("group.line").Text())
-	var content string
-	if line > 0 {
-		content, err = routing.ReplaceLine(f.Content, line, g.Text())
-	} else {
-		content, err = routing.InsertSectionLine(f.Content, "Proxy Group", g.Text())
-	}
-	if err != nil {
-		u.err = err.Error()
-		u.notify()
-		return
-	}
-	u.saveRoutingContent(content, true)
-}
-func (v *nativeView) routingGroupFields(box *widget) {
-	u := v.ui
-	v.pack(box, v.field("group.name", "名称", "", false), v.selectField("类型", u.field("group.type").Text(), []option{{"select", "手动选择"}, {"url-test", "自动测速"}}, func(value string) { u.field("group.type").SetText(value); u.render() }))
-	members := strings.Split(u.field("group.members").Text(), "\n")
-	opts := []option{}
-	for _, m := range members {
-		if m != "" {
-			opts = append(opts, option{m, u.policyLabel(m)})
-		}
-	}
-	if u.field("group.type").Text() == "select" && len(opts) > 0 {
-		v.pack(box, v.selectField("默认策略", u.field("group.selected").Text(), opts, func(value string) { u.field("group.selected").SetText(value) }))
-	}
-	options := u.policyOptions()
-	filtered := options[:0]
-	for _, o := range options {
-		if o.value != "reject" && o.value != u.field("group.name").Text() {
-			filtered = append(filtered, o)
-		}
-	}
-	filtered = append([]option{{"", "选择策略"}}, filtered...)
-	choice := v.selectWidget("", filtered, false, func(value string) {
-		if value == "" {
-			return
-		}
-		members := strings.Split(u.field("group.members").Text(), "\n")
-		if len(members) == 1 && members[0] == "" {
-			members = nil
-		}
-		if !slices.Contains(members, value) {
-			members = append(members, value)
-			u.field("group.members").SetText(strings.Join(members, "\n"))
-			if u.field("group.selected").Text() == "" {
-				u.field("group.selected").SetText(value)
-			}
-		}
-		u.render()
-	})
-	choice.setClasses("compact final-policy")
-	v.inputs["group.addPolicy"] = choice
-	v.pack(box, v.box("", true, 10, false, v.label("分组成员", "field-label"), v.spacer(), v.label("添加策略", "field-label"), choice))
-
-	list := v.box("panel group", false, 0, false)
-	start, end, pager := v.listRange("group-members", len(members))
-	for i := start; i < end; i++ {
-		m := members[i]
-		if m == "" {
-			continue
-		}
-		i, m := i, m
-		if i > 0 {
-			v.pack(list, v.create("separator", props{}))
-		}
-		v.pack(list, v.box("group-row", true, 8, false, v.dataLabel(u.policyLabel(m), "node-name"), v.spacer(), v.button("删除", "link icon-only icon-delete", false, false, func() {
-			rest := append(slices.Clone(members[:i]), members[i+1:]...)
-			u.field("group.members").SetText(strings.Join(rest, "\n"))
-			if u.field("group.selected").Text() == m {
-				value := ""
-				if len(rest) > 0 {
-					value = rest[0]
-				}
-				u.field("group.selected").SetText(value)
-			}
-			u.render()
-		})))
-	}
-	v.pack(box, list)
-	if pager != nil {
-		v.pack(box, pager)
-	}
-	if u.field("group.type").Text() == "url-test" {
-		value := v.dataLabel(u.field("group.url").Text(), "node-name applied-url")
-		value.setExpand(true)
-		value.update = func() { value.setText(u.field("group.url").Text()) }
-		v.pack(box, v.box("option-group", false, 12, false,
-			v.box("", true, 8, false, v.label("测试URL", "field-label"), value, v.button("修改", "link icon-only icon-edit", false, false, u.editGroupTestURL)),
-			v.box("", true, 20, false, v.field("group.interval", "测试间隔（秒）", "600", false), v.field("group.tolerance", "切换公差（毫秒）", "0", false))))
-	}
-}
-func (v *nativeView) routingGroupsPage() {
-	u := v.ui
-	f, ok := u.routingFile()
-	if !ok {
-		return
-	}
-	p, _ := routing.Parse(f.Content)
-	readOnly := f.ID == "default"
-	toolbar := v.box("", true, 10, false, v.dataLabel(f.Name, "section-title"), v.spacer())
-	if !readOnly {
-		v.pack(toolbar, v.button("添加", "primary tight-icon", true, false, func() { u.editRoutingGroup(nil) }))
-	}
-	v.pack(v.body, toolbar)
-	list := v.box("", false, 0, false)
-	start, end, pager := v.listRange("routing-groups", len(p.Groups))
-	for i := start; i < end; i++ {
-		g := p.Groups[i]
-		if i > 0 {
-			v.pack(list, v.create("separator", props{}))
-		}
-		row := v.box("node-row", true, 8, false, v.box("", false, 5, true, v.dataLabel(g.Name, "node-name node-title"), v.dataLabel(fmt.Sprintf("%s · %d", g.Type, len(g.Members)), "help")), v.button("编辑", "link icon-only icon-edit", true, readOnly, func() { u.editRoutingGroup(&g) }))
-		if !readOnly {
-			v.pack(row, v.button("删除", "link icon-only icon-delete", true, readOnly, func() {
-				u.confirm = &deletion{kind: "routing-group", name: g.Name, run: func() { u.modifyRoutingLine(g.Line, "", false) }}
-				u.notify()
-			}))
-		}
-		v.pack(list, row)
-	}
-	if len(p.Groups) == 0 {
-		v.pack(list, v.label("暂无代理分组", "empty help"))
-	}
-	v.listViewport(list)
-	if pager != nil {
-		v.pack(v.body, pager)
-	}
-}
-
 func (v *nativeView) routingTestPage() {
 	u := v.ui
 	if u.field("matchPort").Text() == "" {
@@ -508,10 +358,22 @@ func (v *nativeView) routingTestPage() {
 		var output string
 		u.submit(func() error { var err error; output, err = u.backend.TestRuleRequest(req); return err }, func() { u.result = output })
 	}
-	v.pack(v.body, v.box("panel", false, 18, false,
-		v.box("", true, 18, false, v.box("", false, 0, true, v.field("matchHost", "域名", "example.com", false)), v.box("", false, 0, true, v.field("matchIP", "IP地址（可选）", "1.1.1.1", false))),
-		v.box("", true, 18, false, v.box("", false, 0, true, v.field("matchPort", "目标端口", "443", false)), v.box("", false, 0, true, v.selectField("网络协议", u.field("matchNetwork").Text(), []option{{"tcp", "TCP"}, {"udp", "UDP"}}, func(s string) { u.field("matchNetwork").SetText(s) }))),
-		v.field("matchAgent", "User-Agent（可选）", "", false), v.label("需要测试IP规则时，请填写目标IP", "help"), v.box("", true, 8, false, v.spacer(), v.button("测试规则", "primary icon-test", false, false, test))))
+	field := func(key, label, placeholder string) *widget {
+		input := v.input(key, placeholder, false, false, false)
+		input.setExpand(true)
+		return v.compactFormRow(label, input)
+	}
+	network := v.selectWidget(u.field("matchNetwork").Text(), []option{{"tcp", "TCP"}, {"udp", "UDP"}}, false, func(s string) { u.field("matchNetwork").SetText(s) })
+	network.setExpand(true)
+	v.inputs["matchNetwork"] = network
+	v.pack(v.body, v.box("panel", false, 12, false,
+		field("matchHost", "域名", "example.com"),
+		field("matchIP", "IP地址（可选）", "1.1.1.1"),
+		v.compactFormRow("", v.label("需要测试IP规则时，请填写目标IP，域名可不填", "help")),
+		field("matchPort", "目标端口", "443"),
+		v.compactFormRow("网络协议", network),
+		field("matchAgent", "User-Agent（可选）", ""),
+		v.box("", true, 8, false, v.spacer(), v.button("测试规则", "primary icon-test", false, false, test))))
 	card := v.box("panel", false, 12, false, v.box("", true, 8, false, v.icon("route"), v.label("匹配结果", "field-label")), result)
 	card.setVisible(u.result != "")
 	v.pack(v.body, card)

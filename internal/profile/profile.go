@@ -112,6 +112,7 @@ type Config struct {
 	Selected        string          `json:"selected"`
 	Rules           []Rule          `json:"rules"`
 	Subscriptions   []Subscription  `json:"subscriptions"`
+	PolicyGroups    []PolicyGroup   `json:"policyGroups,omitempty"`
 	RuleOverlays    []RuleOverlay   `json:"ruleOverlays,omitempty"`
 	Settings        Settings        `json:"settings"`
 }
@@ -474,7 +475,7 @@ func (c *Config) ValidateSnapshot() error {
 	if err := ValidateFiles(*c); err != nil {
 		return err
 	}
-	return nil
+	return c.ValidatePolicyGroups()
 }
 
 func Save(path string, c Config) error {

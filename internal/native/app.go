@@ -52,6 +52,9 @@ type UI struct {
 	memoryVisible                      atomic.Bool
 	flagDeadline                       atomic.Int64
 	networkPage                        traffic.Page
+	logRequest                         uint64
+	logControl                         int
+	logPending                         bool
 	history                            []screen
 	popup                              *popup
 	expanded                           map[string]bool
@@ -67,6 +70,7 @@ type UI struct {
 	rule                               profile.Rule
 	confirm                            *deletion
 	busy                               bool
+	backingUp                          bool
 	actionID, busyControl, testControl int
 	testing                            bool
 	testNotice                         string
@@ -222,6 +226,8 @@ func (u *UI) drain() {
 							u.delays[id] = ms
 						}
 						before, after := u.state.Config, next.state.Config
+						// Backup operations update their own list, including while another job is running.
+						next.state.Backups = u.state.Backups
 						u.state = *next.state
 						if before.Settings.Port != after.Settings.Port && u.field("port").Text() == strconv.Itoa(before.Settings.Port) {
 							u.field("port").SetText(strconv.Itoa(after.Settings.Port))
@@ -233,7 +239,7 @@ func (u *UI) drain() {
 								u.render()
 							}
 						}
-						if !reflect.DeepEqual(before.Files, after.Files) || !reflect.DeepEqual(before.Rules, after.Rules) {
+						if !reflect.DeepEqual(before.Files, after.Files) || !reflect.DeepEqual(before.Rules, after.Rules) || !reflect.DeepEqual(before.PolicyGroups, after.PolicyGroups) {
 							if u.page != "home" {
 								u.render()
 							}
@@ -439,9 +445,6 @@ func (u *UI) saveEditor() {
 	case "file-rule":
 		u.saveRoutingRule()
 		return
-	case "routing-group":
-		u.saveRoutingGroup()
-		return
 	case "node":
 		if u.draft.Type == "subscribe" {
 			name, address := strings.TrimSpace(u.field("name").Text()), strings.TrimSpace(u.field("subURL").Text())
@@ -556,22 +559,6 @@ func (u *UI) saveEditor() {
 	case "restore-backup":
 		content := u.field("content").Text()
 		fn = func() error { return u.backend.ImportBackup(content) }
-	case "rule":
-		r := u.rule
-		r.Value = u.field("ruleValue").Text()
-		r.NoResolve = u.field("custom.noResolve").Text() == "true"
-		rules := append([]profile.Rule{}, u.state.Config.Rules...)
-		if r.ID == "" {
-			rules = append(rules, r)
-		} else {
-			for i := range rules {
-				if rules[i].ID == r.ID {
-					rules[i] = r
-					break
-				}
-			}
-		}
-		fn = func() error { return u.backend.SaveRules(rules) }
 	default:
 		return
 	}
@@ -612,15 +599,22 @@ func (u *UI) deleteConfirmed() {
 	if d == nil {
 		return
 	}
+	if d.kind == "logs" {
+		u.logRequest++
+		u.logPending, u.logControl = false, 0
+	}
 	var removed []string
 	for _, n := range u.state.Config.Nodes {
-		if d.kind == "allnodes" || d.kind == "node" && n.ID == d.id || d.kind == "subscription" && n.Source == d.id {
+		if d.kind == "localnodes" && u.state.Config.NodeGroup(n) == "" || d.kind == "node" && n.ID == d.id || d.kind == "subscription" && n.Source == d.id {
 			removed = append(removed, n.ID)
 		}
 	}
 	u.submit(func() error {
-		if d.kind == "allnodes" {
-			return u.backend.DeleteAllNodes()
+		if d.kind == "localnodes" {
+			return u.backend.DeleteLocalNodes()
+		}
+		if d.kind == "routing-group" {
+			return u.backend.DeletePolicyGroup(d.id)
 		}
 		if d.kind == "file" {
 			return u.backend.DeleteConfigFile(d.id)
@@ -638,7 +632,9 @@ func (u *UI) deleteConfirmed() {
 		}
 		u.confirm = nil
 		u.notice = ""
-		if u.page == "home" && u.editor == "" && u.detail == "" {
+		if d.kind == "logs" && u.detail == "network-logs" {
+			u.fetchNetworkLogs(u.networkQuery.Load().(logQuery).Kind, 0)
+		} else if u.page == "home" && u.editor == "" && u.detail == "" {
 			u.nodesDirty = true
 			u.notify()
 		} else {

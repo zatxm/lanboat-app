@@ -14,6 +14,8 @@ type popup struct {
 	kind, title, link, bitmap, qrError string
 	deletion                           *deletion
 	previous                           *popup
+	checkingUpdate                     bool
+	releaseTag                         string
 }
 
 func (u *UI) share(kind, id, name string) {
@@ -45,10 +47,8 @@ func (u *UI) closePopup() {
 		if u.popup != nil && u.popup.kind == "confirm" {
 			u.confirm = nil
 		}
-		if u.popup != nil && u.popup.kind == "message" {
+		if u.popup != nil {
 			u.popup = u.popup.previous
-		} else {
-			u.popup = nil
 		}
 		u.err = ""
 		u.notify()
@@ -83,8 +83,9 @@ func (v *nativeView) syncPopup() {
 	u := v.ui
 	if u.confirm != nil && (u.popup == nil || u.popup.kind == "confirm" && u.popup.deletion != u.confirm) {
 		title := "确认"
-		if u.confirm.kind == "node" {
-			title = "删除节点"
+		switch u.confirm.kind {
+		case "node", "localnodes":
+			title = "节点"
 		}
 		u.popup = &popup{kind: "confirm", title: title, deletion: u.confirm}
 	}
@@ -92,6 +93,7 @@ func (v *nativeView) syncPopup() {
 		u.popup = nil
 	}
 	if v.popupShown != u.popup {
+		v.updateCheck = nil
 		if v.popupRoot != nil {
 			old := v.popupRoot
 			for id, w := range v.widgets {
@@ -170,6 +172,13 @@ func (v *nativeView) syncPopup() {
 				v.popupError = v.label("", "help error")
 				v.popupError.setVisible(false)
 				v.pack(box, v.popupError)
+			} else if p.kind == "app-update" {
+				width, height = 460, 0
+				v.pack(box, v.dataLabel(p.releaseTag, "node-name"),
+					v.label("打开 GitHub 发布页查看发布说明和安装包。", "help"),
+					v.box("", true, 10, false, v.spacer(),
+						v.button("稍后", "secondary", false, false, u.closePopup),
+						v.button("查看 GitHub 发布页", "primary icon-external", false, false, func() { u.openExternal(p.link) })))
 			} else if p.kind == "about" {
 				u.status.Memory = u.backend.MemoryUsage()
 				width, height = 560, 400
@@ -178,7 +187,8 @@ func (v *nativeView) syncPopup() {
 					v.pack(box, v.box("", true, 16, false, append([]*widget{key}, values...)...))
 				}
 				row("名称", v.dataLabel(appmeta.Name, "node-name"))
-				row("版本号", v.dataLabel(appmeta.Version, "node-name"), v.button("检查更新", "link icon-refresh", false, true, nil))
+				v.updateCheck = v.button("检查更新", "link icon-refresh", false, false, func() { u.checkForUpdate(p) })
+				row("版本号", v.dataLabel(appmeta.Version, "node-name"), v.updateCheck)
 				row("Golang版本", v.dataLabel(runtime.Version(), "node-name"))
 				row(toolkitName+"版本", v.dataLabel(toolkitVersion(), "node-name"))
 				memory := v.dataLabel(formatBytes(u.status.Memory.RSS), "node-name")
@@ -191,6 +201,12 @@ func (v *nativeView) syncPopup() {
 				folder.setTooltip(u.state.DataDir)
 				row("文件目录", folder)
 				v.pack(box, v.spacer())
+			} else if p.kind == "routing-group" {
+				width, height = 560, 0
+				v.routingGroupFields(box)
+			} else if p.kind == "group-test-members" {
+				width, height = 480, 0
+				v.groupTestMembers(box)
 			} else if p.kind == "group-test-settings" {
 				width, height = 620, 0
 				v.groupTestURLEditor(box)
@@ -199,10 +215,16 @@ func (v *nativeView) syncPopup() {
 				v.connectivityEditor(box, p.kind == "speed-settings")
 			} else if strings.HasPrefix(p.kind, "proxy-") {
 				width, height = 620, 0
+				if p.kind == "proxy-port" {
+					width = 430
+				}
 				v.proxyFields(box, strings.TrimPrefix(p.kind, "proxy-"))
 			} else if p.kind == "rule-update-settings" {
-				width, height = 560, 0
+				width, height = 420, 0
 				v.ruleUpdateEditor(box)
+			} else if p.kind == "custom-rule-editor" {
+				width, height = 560, 0
+				v.customRuleEditor(box)
 			} else if p.kind == "tcp-settings" {
 				width, height = 620, 0
 				v.tcpEditor(box)

@@ -62,7 +62,7 @@ func (a *App) applyConnectedConfig(c profile.Config, force bool, restoreData fun
 	previous := a.config
 	nodeTargetsChanged := !reflect.DeepEqual(c.Nodes, previous.Nodes) && (profile.HasPolicyTargets(c) || profile.HasPolicyTargets(previous))
 	restart := force && c.Settings.Mode == "rule" || nodeTargetsChanged || !reflect.DeepEqual(c.Settings.UDP, previous.Settings.UDP) || !reflect.DeepEqual(c.Settings.TCP, previous.Settings.TCP) || !reflect.DeepEqual(c.Settings.DNS, previous.Settings.DNS) || c.Selected != previous.Selected || c.Settings.Port != previous.Settings.Port || c.Settings.Mode != previous.Settings.Mode || c.Settings.Proxy != previous.Settings.Proxy
-	if !restart && (c.ActiveFile != previous.ActiveFile || !reflect.DeepEqual(c.Files, previous.Files) || !reflect.DeepEqual(c.Rules, previous.Rules) || !reflect.DeepEqual(c.RuleOverlays, previous.RuleOverlays) || c.Settings.Mode == "rule" && c.Settings.RuleRegion != previous.Settings.RuleRegion) {
+	if !restart && (c.ActiveFile != previous.ActiveFile || !reflect.DeepEqual(c.Files, previous.Files) || !reflect.DeepEqual(c.Rules, previous.Rules) || !reflect.DeepEqual(c.RuleOverlays, previous.RuleOverlays) || !reflect.DeepEqual(c.PolicyGroups, previous.PolicyGroups) || c.Settings.Mode == "rule" && c.Settings.RuleRegion != previous.Settings.RuleRegion) {
 		old, err := profile.EffectiveRouting(previous)
 		if err != nil {
 			return noop, err

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/zatxm/fego/v26/ui"
+	"github.com/zatxm/lanboat-app/internal/desktop"
 	"github.com/zatxm/lanboat-app/internal/profile"
 )
 
@@ -174,7 +175,7 @@ func (v *nativeView) render() {
 	query := u.networkQuery.Load().(logQuery)
 	showLogs := u.detail == "network-logs" && u.editor == ""
 	u.appLogPolling.Store(showLogs && query.Kind == "app")
-	u.networkPolling.Store(showLogs && query.Kind != "app" && query.Page == 0)
+	u.networkPolling.Store(showLogs && !u.logPending && query.Kind != "app" && query.Page == 0)
 	v.applyTheme()
 	u.dirty = false
 	u.nodesDirty = false
@@ -209,13 +210,11 @@ func (v *nativeView) render() {
 	v.pagination = nil
 	v.logContainer = nil
 	v.logSignature = ""
+	v.backupList, v.backupCreate, v.backupRows = nil, nil, nil
 	titles := map[string]string{"config": "路由规则", "rules": "自定义规则", "logs": "代理日志"}
 	title := titles[u.page]
 	if u.editor != "" {
-		title = map[string]string{"node": "节点详情", "import": "导入节点", "subscription": "订阅详情", "rule": "添加规则", "file-rule": "编辑规则", "routing-group": "代理分组", "config-file": "编辑配置", "config-view": "查看配置", "config-import": "新增规则配置", "restore-backup": "恢复备份", "dns-settings": "DNS设置"}[u.editor]
-	}
-	if u.editor == "rule" && u.rule.ID != "" {
-		title = "编辑规则"
+		title = map[string]string{"node": "节点详情", "import": "导入节点", "subscription": "订阅详情", "file-rule": "编辑规则", "config-file": "编辑配置", "config-view": "查看配置", "config-import": "新增规则配置", "restore-backup": "恢复备份", "dns-settings": "DNS设置"}[u.editor]
 	}
 	if u.editor == "file-rule" && u.field("route.line").Text() == "0" {
 		title = "添加规则"
@@ -224,7 +223,7 @@ func (v *nativeView) render() {
 		title = "添加节点"
 	}
 	if u.detail != "" && u.editor == "" {
-		if t, ok := map[string]string{"rule-test": "测试规则", "routing-control": "分流控制", "routing-groups": "代理分组", "dns": "DNS 诊断", "proxy": "代理日志", "backups": "备份", "test-settings": "连通性测试", "tcp-settings": "TCP", "udp-settings": "UDP", "proxy-settings": "代理", "dns-query": "查询诊断", "network-logs": "查看日志", "about": "关于"}[u.detail]; ok {
+		if t, ok := map[string]string{"rule-test": "测试规则", "routing-control": "分流控制", "routing-groups": "策略组", "dns": "DNS 诊断", "proxy": "代理日志", "backups": "备份", "test-settings": "连通性测试", "tcp-settings": "TCP", "udp-settings": "UDP", "proxy-settings": "代理", "dns-query": "查询诊断", "network-logs": "查看日志", "about": "关于"}[u.detail]; ok {
 			title = t
 		}
 	}
@@ -314,8 +313,12 @@ func (v *nativeView) refresh() {
 	v.syncPopup()
 	v.applyTheme()
 	v.refreshLanguage()
+	if v.backupList != nil && !slices.Equal(v.backupRows, u.state.Backups) {
+		v.renderBackupRows()
+	}
+	checkingUpdate := v.updateCheck != nil && u.popup != nil && u.popup.checkingUpdate
 	for _, w := range v.widgets {
-		w.setLoading(u.busy && w.id == u.busyControl || u.testing && w.id == u.testControl)
+		w.setLoading(u.busy && w.id == u.busyControl || u.testing && w.id == u.testControl || w.id == u.logControl || u.backingUp && w == v.backupCreate || checkingUpdate && w == v.updateCheck)
 		if w.update != nil && !u.busy {
 			w.update()
 		}
@@ -325,6 +328,10 @@ func (v *nativeView) refresh() {
 	}
 	for _, c := range v.controls {
 		disabled := c.disabled || (c.widget == v.exportNodes && len(u.state.Config.Nodes) == 0)
+		if hasClass(c.widget.classes, "backup-action") {
+			disabled = disabled || u.backingUp || c.widget == v.backupCreate && len(u.state.Backups) >= desktop.MaxBackups
+		}
+		disabled = disabled || c.widget.id == u.logControl || checkingUpdate && c.widget == v.updateCheck
 		c.widget.setEnabled(!u.busy && !disabled && !(u.editor == "node" && u.nodeLocked(u.draft.ID) && c.widget != v.back && !strings.Contains(c.widget.classes, "banner-close")))
 	}
 	for _, w := range v.nav {
@@ -368,6 +375,7 @@ func (v *nativeView) refresh() {
 	if v.logContainer != nil {
 		v.refreshNetworkLogs()
 	}
+	v.alignCompactForm()
 }
 func (v *nativeView) home() {
 	u := v.ui
@@ -499,7 +507,12 @@ func (v *nativeView) renderNodes() {
 		}
 		auto.update()
 		v.pack(header, auto, v.button("延迟检测", "link icon-only icon-test", false, count == 0, func() { u.testGroupNodes(g.ID) }))
-		if g.ID != "" {
+		if g.ID == "" {
+			v.pack(header, v.button("删除所有本地节点", "link danger icon-only icon-delete", true, false, func() {
+				u.confirm = &deletion{kind: "localnodes"}
+				u.notify()
+			}))
+		} else {
 			v.pack(header, v.button("订阅详情", "link icon-only icon-info", false, false, func() { u.openDetail("subscription:" + g.ID) }))
 			v.pack(header, v.button("分享订阅", "link icon-only icon-share", false, false, func() { u.share("subscription", g.ID, g.Name) }))
 			v.pack(header, v.button("删除订阅", "link danger icon-only icon-delete", true, false, func() { u.confirm = &deletion{kind: "subscription", id: g.ID, name: g.Name}; u.notify() }))
@@ -629,12 +642,12 @@ func (v *nativeView) rules() {
 			rules[i], rules[i+delta] = rules[i+delta], rules[i]
 			save(rules)
 		}
-		toggle := "停用"
+		toggle, toggleStyle := "停用", "link icon-only icon-check rule-state"
 		if r.Disabled {
-			toggle = "启用"
+			toggle, toggleStyle = "启用", "link icon-only icon-close danger rule-state"
 		}
 		row := v.box("node-row", true, 8, false, v.label(strconv.Itoa(i+1), "help"), v.box("", false, 5, true, v.dataLabel(r.Value, "node-name node-title"), v.label(typeLabel, "help")), v.dataLabel(u.policyLabel(r.Action), "strategy"),
-			v.button(toggle, "link icon-only icon-check", true, false, func() { rules := slices.Clone(u.state.Config.Rules); rules[i].Disabled = !r.Disabled; save(rules) }),
+			v.button(toggle, toggleStyle, true, false, func() { rules := slices.Clone(u.state.Config.Rules); rules[i].Disabled = !r.Disabled; save(rules) }),
 			v.button("编辑", "link icon-only icon-edit", true, false, func() { u.editCustomRule(r) }),
 			v.button("上移", "link icon-only icon-up", true, i == 0, func() { move(-1) }), v.button("下移", "link icon-only icon-down", true, i == len(u.state.Config.Rules)-1, func() { move(1) }),
 			v.button("删除", "link icon-only icon-delete", true, false, func() {
@@ -658,7 +671,45 @@ func (u *UI) editCustomRule(r profile.Rule) {
 	u.rule = r
 	u.field("ruleValue").SetText(r.Value)
 	u.field("custom.noResolve").SetText(strconv.FormatBool(r.NoResolve))
-	u.openEditor("rule")
+	title := "添加规则"
+	if r.ID != "" {
+		title = "编辑规则"
+	}
+	u.popup = &popup{kind: "custom-rule-editor", title: title}
+	u.notify()
+}
+
+func (v *nativeView) customRuleEditor(box *widget) {
+	u := v.ui
+	value := v.input("ruleValue", ruleHint(u.rule.Type), false, false, false)
+	kind := v.selectWidget(u.rule.Type, ruleTypes, false, func(s string) { u.rule.Type = s; value.setPlaceholder(ruleHint(s)) })
+	policy := v.selectWidget(u.rule.Action, u.policyOptions(), false, func(s string) { u.rule.Action = s })
+	v.inputs["policy"] = policy
+	for _, input := range []*widget{kind, value, policy} {
+		input.setExpand(true)
+	}
+	v.pack(box, v.compactFormRow("匹配类型", kind), v.compactFormRow("匹配内容", value), v.compactFormRow("策略", policy),
+		v.compactFormRow("不解析域名", v.switchInput("custom.noResolve", "不解析域名")),
+		v.box("", true, 10, false, v.spacer(), v.button("确定", "primary icon-check", false, false, u.saveCustomRule)))
+}
+
+func (u *UI) saveCustomRule() {
+	r := u.rule
+	r.Value = u.field("ruleValue").Text()
+	r.NoResolve = u.field("custom.noResolve").Text() == "true"
+	rules := slices.Clone(u.state.Config.Rules)
+	if r.ID == "" {
+		rules = append(rules, r)
+	} else {
+		i := slices.IndexFunc(rules, func(old profile.Rule) bool { return old.ID == r.ID })
+		if i < 0 {
+			u.err = "规则不存在"
+			u.notify()
+			return
+		}
+		rules[i] = r
+	}
+	u.submit(func() error { return u.backend.SaveRules(rules) }, func() { u.popup = nil })
 }
 func (v *nativeView) editor() *widget {
 	u := v.ui
@@ -743,7 +794,7 @@ func (v *nativeView) editor() *widget {
 	case "config-file", "config-view":
 		readOnly := u.editor == "config-view"
 		v.pack(box, v.configNameField("default.conf", readOnly))
-		v.pack(box, v.box("field", false, 8, true, v.label("配置内容", "field-label"), v.input("fileContent", "", true, false, readOnly)))
+		v.pack(box, v.configContentField(readOnly))
 	case "dns-settings":
 		v.dnsFields(box)
 	case "config-import":
@@ -752,15 +803,8 @@ func (v *nativeView) editor() *widget {
 		v.pack(box, v.box("field", false, 8, false, v.label("备份文件路径或 JSON 内容（恢复会替换现有数据）", "field-label"), v.input("content", "", true, false, false)))
 	case "file-rule":
 		v.routingRuleFields(box)
-	case "routing-group":
-		v.routingGroupFields(box)
-	case "rule":
-		value := v.input("ruleValue", ruleHint(u.rule.Type), false, false, false)
-		v.pack(box, v.selectField("匹配类型", u.rule.Type, ruleTypes, func(s string) { u.rule.Type = s; value.setPlaceholder(ruleHint(s)) }))
-		v.pack(box, v.box("field", false, 7, false, v.label("匹配内容", "field-label"), value))
-		v.pack(box, v.policySelect(u.rule.Action, func(s string) { u.rule.Action = s }), v.formSwitch("custom.noResolve", "不解析域名"))
 	}
-	if u.editor == "config-file" || u.editor == "config-view" || u.editor == "config-import" || u.editor == "import" || u.editor == "file-rule" || u.editor == "routing-group" || u.editor == "rule" || u.editor == "dns-settings" {
+	if u.editor == "config-file" || u.editor == "config-view" || u.editor == "config-import" || u.editor == "import" || u.editor == "file-rule" || u.editor == "dns-settings" {
 		return frame
 	}
 	if u.editor != "node" {

@@ -67,109 +67,127 @@ func Unpack(root string, input io.Reader) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	ok := false
-	defer func() {
-		if !ok {
-			_ = os.RemoveAll(dir)
-		}
-	}()
+	if _, err = scanGeneration(input, dir); err != nil {
+		_ = os.RemoveAll(dir)
+		return "", err
+	}
+	return dir, nil
+}
+
+// VerifyArchive validates an archived generation without extracting it to disk.
+func VerifyArchive(input io.Reader) error {
+	_, err := scanGeneration(input, "")
+	return err
+}
+
+func scanGeneration(input io.Reader, dir string) ([]byte, error) {
 	gz, err := gzip.NewReader(input)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer gz.Close()
 	tr := tar.NewReader(gz)
 	hashes := map[string]string{}
-	var manifest []byte
-	total := int64(0)
+	var manifest, index bytes.Buffer
+	buf := make([]byte, 32<<10)
+	sum := sha256.New()
+	var total int64
 	for {
-		h, e := tr.Next()
-		if e == io.EOF {
+		h, err := tr.Next()
+		if err == io.EOF {
 			break
 		}
-		if e != nil {
-			return "", e
+		if err != nil {
+			return nil, err
 		}
 		name := strings.TrimSuffix(strings.TrimPrefix(h.Name, "./"), "/")
-		clean := path.Clean(name)
 		if name == "" || name == "." {
 			continue
 		}
-		if clean != name || strings.HasPrefix(clean, "../") || strings.HasPrefix(clean, "/") || strings.Contains(clean, "\\") {
-			return "", errors.New("规则包路径无效")
+		if path.Clean(name) != name || !filepath.IsLocal(name) || strings.Contains(name, "\\") {
+			return nil, errors.New("规则包路径无效")
 		}
 		if h.Typeflag == tar.TypeDir {
 			continue
 		}
 		if h.Typeflag != tar.TypeReg && h.Typeflag != tar.TypeRegA {
-			return "", errors.New("规则包包含非普通文件")
+			return nil, errors.New("规则包包含非普通文件")
+		}
+		if h.Size < 0 || h.Size > (256<<20)-total || len(hashes) > 5000 {
+			return nil, errors.New("规则包过大")
 		}
 		total += h.Size
-		if h.Size < 0 || total > 256<<20 || len(hashes) > 5000 {
-			return "", errors.New("规则包过大")
+		if _, exists := hashes[name]; exists {
+			return nil, errors.New("规则包文件重复")
 		}
-		dest := filepath.Join(dir, filepath.FromSlash(clean))
-		if err = os.MkdirAll(filepath.Dir(dest), 0700); err != nil {
-			return "", err
-		}
-		f, e := os.OpenFile(dest, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
-		if e != nil {
-			return "", e
-		}
-		sum := sha256.New()
-		_, e = io.Copy(io.MultiWriter(f, sum), tr)
-		ce := f.Close()
-		if e != nil {
-			return "", e
-		}
-		if ce != nil {
-			return "", ce
-		}
-		if clean == "SHA256SUMS" {
-			manifest, e = os.ReadFile(dest)
-			if e != nil {
-				return "", e
+		sum.Reset()
+		var out io.Writer = sum
+		switch name {
+		case "SHA256SUMS", "rules-index.json":
+			if h.Size > 8<<20 {
+				return nil, errors.New("规则包索引或校验清单过大")
 			}
+			metadata := &index
+			if name == "SHA256SUMS" {
+				metadata = &manifest
+			}
+			out = io.MultiWriter(out, metadata)
+		}
+		if dir == "" {
+			_, err = io.CopyBuffer(out, tr, buf)
 		} else {
-			hashes[clean] = hex.EncodeToString(sum.Sum(nil))
+			dest := filepath.Join(dir, filepath.FromSlash(name))
+			if err := os.MkdirAll(filepath.Dir(dest), 0700); err != nil {
+				return nil, err
+			}
+			f, err := os.OpenFile(dest, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+			if err != nil {
+				return nil, err
+			}
+			_, copyErr := io.CopyBuffer(io.MultiWriter(f, out), tr, buf)
+			if err := errors.Join(copyErr, f.Close()); err != nil {
+				return nil, err
+			}
+		}
+		if err != nil {
+			return nil, err
+		}
+		hashes[name] = hex.EncodeToString(sum.Sum(nil))
+	}
+	delete(hashes, "SHA256SUMS")
+	for name := range hashes {
+		for parent := path.Dir(name); parent != "."; parent = path.Dir(parent) {
+			if parent == "SHA256SUMS" || hashes[parent] != "" {
+				return nil, errors.New("规则包路径无效")
+			}
 		}
 	}
-	expected := map[string]string{}
-	for _, line := range strings.Split(strings.TrimSpace(string(manifest)), "\n") {
-		parts := strings.SplitN(line, "  ", 2)
-		if len(parts) != 2 || len(parts[0]) != 64 {
-			return "", errors.New("规则包校验清单无效")
-		}
-		if _, exists := expected[parts[1]]; exists {
-			return "", errors.New("规则包校验清单重复")
-		}
-		expected[parts[1]] = parts[0]
-	}
-	if len(expected) != len(hashes) {
-		return "", errors.New("规则包文件数量不匹配")
-	}
-	for name, sum := range hashes {
-		if expected[name] != sum {
-			return "", fmt.Errorf("规则包校验失败：%s", name)
-		}
-	}
-	entries, err := Index(dir)
-	if err != nil {
-		return "", err
-	}
-	if len(entries) == 0 {
-		return "", errors.New("规则包索引为空")
+	var entries []Item
+	if err := json.Unmarshal(index.Bytes(), &entries); err != nil || len(entries) == 0 {
+		return nil, errors.New("规则包索引无效")
 	}
 	for _, entry := range entries {
 		if entry.Path != "srs/"+entry.Kind+"/"+entry.Category+".srs" || hashes[entry.Path] == "" {
-			return "", errors.New("规则包索引无效")
+			return nil, errors.New("规则包索引无效")
 		}
 	}
-	if _, err = io.Copy(io.Discard, gz); err != nil {
-		return "", err
+	for line := range strings.SplitSeq(strings.TrimSpace(manifest.String()), "\n") {
+		hash, name, ok := strings.Cut(line, "  ")
+		if !ok || len(hash) != 64 {
+			return nil, errors.New("规则包校验清单无效")
+		}
+		if hashes[name] != hash {
+			return nil, fmt.Errorf("规则包校验失败：%s", name)
+		}
+		delete(hashes, name)
 	}
-	ok = true
-	return dir, nil
+	if len(hashes) != 0 {
+		return nil, errors.New("规则包文件数量不匹配")
+	}
+	if _, err := io.CopyBuffer(io.Discard, gz, buf); err != nil {
+		return nil, err
+	}
+	return manifest.Bytes(), nil
 }
 
 func install(root string, input io.Reader) (string, error) {

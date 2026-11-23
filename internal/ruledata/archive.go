@@ -34,6 +34,8 @@ func VerifyDir(dir string) error {
 	}
 	found := 0
 	var total int64
+	buf := make([]byte, 32<<10)
+	h := sha256.New()
 	err = filepath.WalkDir(dir, func(name string, e fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -61,8 +63,8 @@ func VerifyDir(dir string) error {
 			return err
 		}
 		defer f.Close()
-		h := sha256.New()
-		n, err := io.Copy(h, io.LimitReader(f, (256<<20)+1))
+		h.Reset()
+		n, err := io.CopyBuffer(h, io.LimitReader(f, (256<<20)+1), buf)
 		total += n
 		if err != nil {
 			return err
@@ -98,6 +100,7 @@ func WriteGeneration(dir string, out io.Writer) error {
 	}
 	gz := gzip.NewWriter(out)
 	tw := tar.NewWriter(gz)
+	buf := make([]byte, 32<<10)
 	err := filepath.WalkDir(dir, func(name string, e fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -124,7 +127,7 @@ func WriteGeneration(dir string, out io.Writer) error {
 		if err != nil {
 			return err
 		}
-		_, err = io.Copy(tw, f)
+		_, err = io.CopyBuffer(tw, io.LimitReader(f, info.Size()), buf)
 		ce := f.Close()
 		if err != nil {
 			return err
@@ -161,9 +164,6 @@ func CompactInactive(root string) error {
 		if dir == current {
 			continue
 		}
-		if err = VerifyDir(dir); err != nil {
-			return err
-		}
 		archive := dir + ".tar.gz"
 		if _, err = os.Stat(archive); os.IsNotExist(err) {
 			temp, err := os.CreateTemp(root, ".generation-*.tar.gz")
@@ -185,19 +185,22 @@ func CompactInactive(root string) error {
 			}
 		} else if err != nil {
 			return err
+		} else if err = VerifyDir(dir); err != nil {
+			return err
 		}
 		f, err := os.Open(archive)
 		if err != nil {
 			return err
 		}
-		restored, err := Unpack(root, f)
+		got, err := scanGeneration(f, "")
 		f.Close()
 		if err != nil {
 			return err
 		}
-		want, _ := os.ReadFile(filepath.Join(dir, "SHA256SUMS"))
-		got, _ := os.ReadFile(filepath.Join(restored, "SHA256SUMS"))
-		os.RemoveAll(restored)
+		want, err := os.ReadFile(filepath.Join(dir, "SHA256SUMS"))
+		if err != nil {
+			return err
+		}
 		if !bytes.Equal(want, got) {
 			return errors.New("规则库压缩包与原数据不一致")
 		}

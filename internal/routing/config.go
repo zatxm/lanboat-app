@@ -114,7 +114,7 @@ func Parse(content string) (Parsed, error) {
 			}
 			for _, old := range p.Groups {
 				if old.Name == g.Name {
-					return p, fail("代理分组名称重复")
+					return p, fail("策略组名称重复")
 				}
 			}
 			g.Line = line

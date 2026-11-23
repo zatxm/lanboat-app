@@ -32,11 +32,11 @@ func testUI(t *testing.T) *UI {
 func waitJob(t *testing.T, u *UI) {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)
-	for (u.busy || u.testing) && time.Now().Before(deadline) {
+	for (u.busy || u.testing || u.logPending || u.backingUp) && time.Now().Before(deadline) {
 		u.drain()
 		time.Sleep(time.Millisecond)
 	}
-	if u.busy || u.testing {
+	if u.busy || u.testing || u.logPending || u.backingUp {
 		t.Fatal("UI job did not finish")
 	}
 }

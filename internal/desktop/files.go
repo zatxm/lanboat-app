@@ -120,6 +120,10 @@ func (a *App) SaveConfigFile(id, name, input string) error {
 		}
 		c.Files = append(c.Files, profile.ConfigFile{ID: id})
 	}
+	content, err = c.ImportPolicyGroups(content, "file:"+id, nil)
+	if err != nil {
+		return err
+	}
 	found := false
 	for i, f := range c.Files {
 		if f.ID == id {
@@ -248,6 +252,12 @@ func (a *App) TestRuleRequest(req routing.Request) (string, error) {
 	if action == "direct" || action == "proxy" || action == "reject" {
 		action = strings.ToUpper(action)
 	} else {
+		for _, g := range c.PolicyGroups {
+			if action == g.Ref() {
+				action = g.Name
+				break
+			}
+		}
 		for _, n := range c.Nodes {
 			if action == "node:"+n.ID {
 				action = n.Name
@@ -265,7 +275,15 @@ func (a *App) exportPayload(kind, id string) (string, []byte, error) {
 	switch kind {
 	case "nodes":
 		b := nodeBundle{Format: nodeFormat, Nodes: a.config.Nodes, Subscriptions: a.config.Subscriptions, Selected: a.config.Selected, RuleOverlays: a.config.RuleOverlays}
-		var err error
+		contents := make([]string, 0, len(a.config.RuleOverlays))
+		for _, overlay := range a.config.RuleOverlays {
+			contents = append(contents, overlay.Content)
+		}
+		groups, err := a.config.ReferencedPolicyGroups(contents)
+		if err != nil {
+			return "", nil, err
+		}
+		b.PolicyGroups = groups
 		data, err = json.Marshal(b)
 		if err != nil {
 			return "", nil, err
@@ -274,7 +292,11 @@ func (a *App) exportPayload(kind, id string) (string, []byte, error) {
 	case "config":
 		for _, f := range a.config.Files {
 			if f.ID == id {
-				data = []byte(f.Content)
+				content, err := a.config.ExportRoutingConfig(f.Content)
+				if err != nil {
+					return "", nil, err
+				}
+				data = []byte(content)
 				name = filepath.Base(f.Name)
 			}
 		}

@@ -93,10 +93,10 @@ func (v *nativeView) configPage() {
 		v.routingTestPage()
 		return
 	}
-	v.pack(v.body, v.box("routing-toolbar", true, 12, false,
+	actions := v.box("", true, 8, false,
 		v.button("测试规则", "link toolbar-button icon-test", false, false, func() { u.openDetail("rule-test") }),
-		v.button("自定义规则", "link toolbar-button icon-route", false, false, func() { u.openPage("rules") }), v.spacer(),
-		v.button("新增规则配置", "primary toolbar-button icon-add", true, false, u.importConfig)))
+		v.button("自定义规则", "link toolbar-button icon-route", false, false, func() { u.openPage("rules") }),
+		v.button("策略组", "link toolbar-button icon-layers", false, false, func() { u.openDetail("routing-groups") }))
 	autoRegion := v.translate("自动匹配")
 	if region := ruledata.Region(""); region != "" {
 		autoRegion += " · " + strings.ToUpper(region)
@@ -115,7 +115,7 @@ func (v *nativeView) configPage() {
 	country.update = func() { country.setOptions(countryOptions, u.state.Config.Settings.RuleRegion) }
 	country.setClasses("region-select")
 	country.setTooltip("自动匹配根据系统语言和时区推测国家和地区。")
-	updateNow := v.button("立即更新", "link icon-only icon-refresh", false, false, func() {
+	updateNow := v.button("立即更新", "link icon-only compact-icon icon-refresh", false, false, func() {
 		u.submit(func() error {
 			ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
 			defer cancel()
@@ -135,9 +135,16 @@ func (v *nativeView) configPage() {
 			summary.setText(v.translate("不自动更新"))
 		}
 	}
-	v.group("", v.box("group-row", true, 6, false,
-		v.label("国家和地区", "field-label tight-label"), country, v.spacer(), summary,
-		v.button("设置", "secondary icon-settings", false, false, u.editRuleUpdate), updateNow))
+	region := v.box("", true, 8, false, v.label("国家/地区", "field-label tight-label"), country)
+	updateSettings := v.button("设置", "link icon-only compact-icon icon-settings", false, false, u.editRuleUpdate)
+	updateSettings.setTooltip("自动更新设置")
+	updates := v.box("", true, 1, false, summary, updateSettings, updateNow)
+	add := v.button("新增规则配置", "link icon-only icon-add", true, false, u.importConfig)
+	if v.compactWindow() || v.compactRouting {
+		v.pack(v.body, v.box("", true, 12, false, actions, v.spacer(), add), v.box("", true, 12, false, region, v.spacer(), updates))
+	} else {
+		v.pack(v.body, v.box("", true, 16, false, actions, region, updates, v.spacer(), add))
+	}
 	list := v.box("routing-files", false, 0, false)
 	start, end, pager := v.listRange("config-files", len(u.state.Config.Files))
 	for i := start; i < end; i++ {
@@ -380,8 +387,8 @@ func confirmText(d *deletion) string {
 	if d.kind == "subscription" {
 		return "删除订阅「" + d.name + "」及其所有节点？"
 	}
-	if d.kind == "allnodes" {
-		return "删除全部节点？此操作保留订阅地址，可稍后更新订阅重新导入。"
+	if d.kind == "localnodes" {
+		return "确定删除所有本地节点？"
 	}
 	if d.kind == "logs" {
 		return "清空代理日志、DNS日志和应用日志？"

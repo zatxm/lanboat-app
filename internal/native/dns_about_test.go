@@ -2,6 +2,7 @@ package native
 
 import (
 	"github.com/zatxm/lanboat-app/internal/appmeta"
+	"github.com/zatxm/lanboat-app/internal/desktop"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -237,8 +238,8 @@ func TestNativeWindowDNSAndAbout(t *testing.T) {
 		t.Fatal("About must be a popup")
 	}
 	update := button("检查更新")
-	if update.enabled {
-		t.Fatal("updater placeholder enabled")
+	if !update.enabled {
+		t.Fatal("update check is unavailable")
 	}
 	versions := map[string]bool{runtime.Version(): false, toolkitVersion(): false, appmeta.Name: false, appmeta.Version: false}
 	for _, w := range v.widgets {
@@ -268,6 +269,39 @@ func TestNativeWindowDNSAndAbout(t *testing.T) {
 	}
 	if !strings.Contains(opened, u.state.DataDir+"\n") {
 		t.Fatal("file-manager opener", opened)
+	}
+	about := u.popup
+	committed := time.Date(2026, 11, 23, 2, 43, 2, 0, time.UTC)
+	release := desktop.AppRelease{Tag: "v26.1123.104302", CommitTime: committed, Page: "https://github.com/zatxm/lanboat-app/releases/tag/v26.1123.104302"}
+	u.showAppRelease(about, release, committed)
+	pump()
+	if u.popup.kind != "message" || u.popup.link != "当前没有可用的更新。" || u.popup.previous != about {
+		t.Fatal("same commit should be reported as current")
+	}
+	u.closePopup()
+	u.showAppRelease(about, release, committed.Add(-time.Second))
+	pump()
+	if u.popup.kind != "app-update" || u.popup.releaseTag != release.Tag || u.popup.previous != about {
+		t.Fatal("new release dialog")
+	}
+	button("查看 GitHub 发布页").click()
+	wait()
+	deadline = time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		b, _ := os.ReadFile(capture)
+		opened = string(b)
+		if strings.Contains(opened, release.Page+"\n") {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if !strings.Contains(opened, release.Page+"\n") {
+		t.Fatal("GitHub release opener", opened)
+	}
+	button("稍后").click()
+	pump()
+	if u.popup != about {
+		t.Fatal("leaving the update dialog should return to About")
 	}
 	home, _ := os.UserHomeDir()
 	if displayDataDir(filepath.Join(home, ".lanboat")) != "~/.lanboat" {

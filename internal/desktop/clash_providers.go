@@ -162,7 +162,7 @@ func (a *App) expandClashProviders(content string, parent profile.Subscription) 
 				name := fmt.Sprint(provider)
 				list, ok := members[name]
 				if !ok {
-					return "", fmt.Errorf("代理分组引用不存在或为空的提供器 %s", name)
+					return "", fmt.Errorf("策略组引用不存在或为空的提供器 %s", name)
 				}
 				for _, member := range list {
 					existing = append(existing, member)

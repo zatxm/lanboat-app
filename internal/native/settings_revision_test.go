@@ -159,10 +159,15 @@ func TestNativeWindowSettingsRevision(t *testing.T) {
 			t.Fatal("file restore action remains")
 		}
 	}
-	button("立即备份").click()
+	create, list, toolbar := button("立即备份"), v.backupList, button("立即备份").parent
+	create.click()
+	v.flush()
+	if !u.backingUp || u.busy || !create.loading || create.enabled || !v.back.enabled || !v.nav["home"].enabled {
+		t.Fatal("backup must show progress without locking navigation")
+	}
 	waitJob(t, u)
 	pump()
-	if len(u.state.Backups) != 1 || u.notice != "" {
+	if len(u.state.Backups) != 1 || u.notice != "" || v.backupList != list || create.parent != toolbar || create.loading || !create.enabled {
 		t.Fatal("settings backup")
 	}
 	button("导入备份")

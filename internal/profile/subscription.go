@@ -192,7 +192,7 @@ func mergeRules(defaultConfig string, lines []string, allowed map[string]bool) (
 	if len(groupLines) > 0 {
 		groups, err := routing.Parse("[Proxy Group]\n" + strings.Join(groupLines, "\n"))
 		if err != nil {
-			return "", fmt.Errorf("订阅代理分组：%w", err)
+			return "", fmt.Errorf("订阅策略组：%w", err)
 		}
 		for _, group := range groups.Groups {
 			for _, member := range group.Members {

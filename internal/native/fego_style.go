@@ -157,7 +157,11 @@ func (w *widget) style() {
 	}
 	switch {
 	case is("icon-only"):
-		e.Size(34, 34).Justify(ui.Center).Background(ui.Color{})
+		size := float32(34)
+		if is("compact-icon") {
+			size = 28
+		}
+		e.Size(size, size).Justify(ui.Center).Background(ui.Color{})
 		switch {
 		case is("danger"):
 			w.iconColor = t.Danger
@@ -375,8 +379,14 @@ func (w *widget) paintLineIcon(p *ui.Painter, icon string) {
 	case "check", "save":
 		path(pair(-6, 0), pair(-2, 4), pair(7, -5))
 	case "refresh":
-		arc(0, 0, 6, -.5, 5.05)
-		path(pair(6, -7), pair(6, -2), pair(1, -2))
+		arc(0, 0, 6.3, -math.Pi+.18, -.35)
+		arc(0, 0, 6.3, .18, math.Pi-.35)
+		path(pair(6, -6.5), pair(6, -2.2), pair(1.7, -2.2))
+		path(pair(-6, 6.5), pair(-6, 2.2), pair(-1.7, 2.2))
+	case "external":
+		path(pair(-1, -6), pair(-6, -6), pair(-6, 6), pair(6, 6), pair(6, 1))
+		line(-1, 1, 6, -6)
+		path(pair(1, -6), pair(6, -6), pair(6, -1))
 	case "share":
 		line(-4, -1.5, 3.5, -5.5)
 		line(-4, 1.5, 3.5, 5.5)

@@ -103,6 +103,7 @@ func EffectiveRouting(c Config) (routing.Parsed, error) {
 	if err := applyNodeRuleOverlay(&p, c); err != nil {
 		return p, err
 	}
+	c.appendUsedPolicyGroups(&p)
 	return p, nil
 }
 

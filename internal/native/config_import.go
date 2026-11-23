@@ -5,6 +5,8 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+
+	"github.com/zatxm/fego/v26/ui"
 )
 
 func (u *UI) importConfig() {
@@ -37,47 +39,64 @@ func (u *UI) previewConfig(input, name string) {
 func (v *nativeView) configNameField(placeholder string, readOnly bool) *widget {
 	name := v.input("fileName", placeholder, false, false, readOnly)
 	name.setExpand(true)
-	return v.box("field", true, 12, false, v.label("名称", "field-label"), name)
+	return v.compactFormRow("名称", name)
+}
+
+func (v *nativeView) configContentField(readOnly bool) *widget {
+	content := v.input("fileContent", "", true, false, readOnly)
+	content.pointer.FillHeight()
+	row := v.compactFormRow("配置内容", content)
+	row.pointer.AlignItems(ui.Start)
+	row.setExpand(true)
+	return row
 }
 
 func (v *nativeView) configImportFields(box *widget) {
 	u := v.ui
-	v.pack(box, v.configNameField("例如：custom.conf", false))
-	method := v.selectWidget(u.field("importMethod").Text(), []option{{"manual", "手动输入"}, {"file", "上传文件"}, {"url", "URL"}}, false, func(value string) {
+	const fieldWidth = 228
+	name := v.input("fileName", "例如：custom.conf", false, false, false)
+	name.pointer.Width(fieldWidth)
+	v.pack(box, v.compactFormRow("名称", name))
+	method := v.selectWidget(u.field("importMethod").Text(), []option{{"manual", "手动输入"}, {"file", "导入文件"}, {"url", "URL"}}, false, func(value string) {
 		u.field("importMethod").SetText(value)
 		u.err = ""
 		u.render()
 	})
-	method.setClasses("protocol-choice")
+	method.pointer.Width(fieldWidth)
 	v.inputs["importMethod"] = method
-	row := v.box("", true, 12, false, v.label("方式", "field-label"), method)
-	if u.field("importMethod").Text() == "file" {
-		v.pack(row, v.button("选择文件", "link icon-upload", false, false, func() {
+	methodRow := v.compactFormRow("方式", method)
+	v.pack(box, methodRow)
+	switch u.field("importMethod").Text() {
+	case "file":
+		v.pack(methodRow, v.button("选择文件", "link icon-upload", false, false, func() {
 			if filename := chooseFile("新增规则配置", "*"); filename != "" {
 				u.field("importPath").SetText(filename)
 				u.previewConfig(filename, filepath.Base(filename))
 			}
 		}))
+		if filename := u.field("importPath").Text(); filename != "" {
+			name := v.dataLabel(filepath.Base(filename), "help node-title")
+			name.setTooltip(filename)
+			v.pack(methodRow, name)
+		}
+	case "url":
+		address := v.input("importURL", "https://…", false, false, false)
+		address.pointer.Width(fieldWidth)
+		parse := v.button("解析", "primary icon-refresh", false, false, func() {
+			input := strings.TrimSpace(u.field("importURL").Text())
+			parsed, err := url.Parse(input)
+			if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" || parsed.User != nil {
+				u.err = "配置地址无效"
+				u.notify()
+				return
+			}
+			name := path.Base(parsed.Path)
+			if name == "." || name == "/" {
+				name = "import.conf"
+			}
+			u.previewConfig(input, name)
+		})
+		v.pack(box, v.compactFormRow("URL", address, parse))
 	}
-	v.pack(box, row)
-	if u.field("importMethod").Text() == "url" {
-		v.pack(box, v.box("field", false, 7, false, v.label("URL", "field-label"),
-			v.box("", true, 12, false, v.box("", false, 0, true, v.input("importURL", "https://…", false, false, false)), v.button("解析", "primary icon-refresh", false, false, func() {
-				address := strings.TrimSpace(u.field("importURL").Text())
-				parsed, err := url.Parse(address)
-				if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" || parsed.User != nil {
-					u.err = "配置地址无效"
-					return
-				}
-				name := path.Base(parsed.Path)
-				if name == "." || name == "/" {
-					name = "import.conf"
-				}
-				u.previewConfig(address, name)
-			}))))
-	}
-	if u.field("importMethod").Text() == "file" && u.field("importPath").Text() != "" {
-		v.pack(box, v.dataLabel(u.field("importPath").Text(), "help"))
-	}
-	v.pack(box, v.box("field", false, 8, true, v.label("配置内容", "field-label"), v.input("fileContent", "", true, false, false)))
+	v.pack(box, v.configContentField(false))
 }

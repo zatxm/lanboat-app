@@ -13,21 +13,28 @@ import (
 const Name = "Lanboat"
 const ID = "lanboat"
 
+var commitTime = buildCommitTime()
 var Version = buildVersion()
 
+func CommitTime() time.Time { return commitTime }
+
 func buildVersion() string {
+	if commitTime.IsZero() {
+		return "dev"
+	}
+	return commitTime.In(time.FixedZone("UTC+8", 8*60*60)).Format("06.0102.150405")
+}
+
+func buildCommitTime() time.Time {
 	if info, ok := debug.ReadBuildInfo(); ok {
 		for _, setting := range info.Settings {
 			if setting.Key == "vcs.time" {
-				if committed, err := time.Parse(time.RFC3339, setting.Value); err == nil {
-					beijing := time.FixedZone("UTC+8", 8*60*60)
-					return committed.In(beijing).Format("06.0102.150405")
-				}
-				break
+				committed, _ := time.Parse(time.RFC3339, setting.Value)
+				return committed
 			}
 		}
 	}
-	return "dev"
+	return time.Time{}
 }
 
 func DataDir() (string, error) {

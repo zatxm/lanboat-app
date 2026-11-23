@@ -110,31 +110,47 @@ func (v *nativeView) connectivityEditor(box *widget, speed bool) {
 	if speed {
 		prefix, defaults = "speed", profile.SpeedURLs
 	}
-	v.pack(box, v.urlFields(prefix, defaults))
+	labelWidth := float32(108)
+	if speed {
+		labelWidth = 76
+	}
+	v.pack(box, v.urlFields(prefix, defaults, labelWidth))
 	if !speed {
-		v.pack(box, v.box("", true, 18, false,
-			v.box("", false, 7, true, v.label("超时时长（秒）", "field-label"), v.input("testTimeout", "15", false, false, false)),
-			v.box("", false, 7, true, v.label("并发数量", "field-label"), v.input("testConcurrency", "20", false, false, false))))
+		timeout := v.input("testTimeout", "15", false, false, false)
+		concurrency := v.input("testConcurrency", "20", false, false, false)
+		timeout.pointer.Width(120)
+		concurrency.pointer.Width(120)
+		v.pack(box, v.settingControlRow("超时时长（秒）", timeout, labelWidth), v.settingControlRow("并发数量", concurrency, labelWidth))
 	}
 	v.dialogActions(box, func() { u.saveConnectivity(speed) })
 }
 
-func (v *nativeView) urlFields(prefix string, defaults []string) *widget {
+func (v *nativeView) urlFields(prefix string, defaults []string, labelWidth float32) *widget {
 	u := v.ui
+	row := func(label string, control *widget) *widget {
+		if labelWidth == 0 {
+			return v.compactFormRow(label, control)
+		}
+		return v.settingControlRow(label, control, labelWidth)
+	}
 	opts := make([]option, 0, len(defaults)+1)
 	for _, target := range defaults {
 		opts = append(opts, option{target, target})
 	}
 	opts = append(opts, option{"custom", "自定义"})
-	custom := v.field(prefix+".custom", "自定义URL", "https://example.com", false)
+	input := v.input(prefix+".custom", "https://example.com", false, false, false)
+	input.setExpand(true)
+	custom := row("自定义URL", input)
 	custom.setVisible(u.field(prefix+".choice").Text() == "custom")
 	choice := v.selectWidget(u.field(prefix+".choice").Text(), opts, false, func(value string) {
 		u.field(prefix + ".choice").SetText(value)
 		custom.setVisible(value == "custom")
+		v.formAlignmentPending = labelWidth == 0 || v.formAlignmentPending
 		fitNativeDialog()
 	})
+	choice.setExpand(true)
 	v.inputs[prefix+".choice"] = choice
-	return v.box("", false, 14, false, v.box("field", false, 7, false, v.label("URL", "field-label"), choice), custom)
+	return v.box("", false, 14, false, row("URL", choice), custom)
 }
 
 func (u *UI) editGroupTestURL() {
@@ -145,12 +161,12 @@ func (u *UI) editGroupTestURL() {
 	}
 	u.field("group.test.choice").SetText(choice)
 	u.field("group.test.custom").SetText(target)
-	u.popup = &popup{kind: "group-test-settings", title: "测试URL"}
+	u.popup = &popup{kind: "group-test-settings", title: "测速URL", previous: u.popup}
 	u.notify()
 }
 func (v *nativeView) groupTestURLEditor(box *widget) {
 	u := v.ui
-	v.pack(box, v.urlFields("group.test", profile.TestURLs))
+	v.pack(box, v.urlFields("group.test", profile.TestURLs, 0))
 	v.dialogActions(box, func() {
 		target := u.connectivityTarget("group.test")
 		if target == "" {

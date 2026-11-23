@@ -79,13 +79,25 @@ func TestNativeWindowNetworkDataAndDNSQuery(t *testing.T) {
 	if v.body != body || v.logContainer != list || u.networkPolling.Load() || u.networkPage.Number != 1 {
 		t.Fatal("log pagination rebuilt page")
 	}
-	for i := 2; i < 16; i++ {
-		clickPage("Next page")
-		waitJob(t, u)
-		pump()
-	}
-	if u.networkPage.Entries[len(u.networkPage.Entries)-1].URL != "request-000.invalid:443" {
+	clickPage("Last page")
+	waitJob(t, u)
+	pump()
+	if u.networkPage.Number != 15 || u.networkPage.Entries[len(u.networkPage.Entries)-1].URL != "request-000.invalid:443" {
 		t.Fatal("oldest log inaccessible")
+	}
+	refresh, viewport := find("刷新"), v.editorScroll
+	if err = os.WriteFile(filepath.Join(dir, "proxy-2026-10-27.jsonl"), append(data, data[:strings.IndexByte(string(data), '\n')+1]...), 0600); err != nil {
+		t.Fatal(err)
+	}
+	refresh.click()
+	v.flush()
+	if u.busy || !refresh.loading || !v.back.enabled || !find("DNS日志").enabled {
+		t.Fatal("refresh locked the whole page")
+	}
+	waitJob(t, u)
+	pump()
+	if v.logContainer != list || v.editorScroll != viewport || find("刷新") != refresh || u.networkPage.Total != 618 || u.networkPage.Number != 15 {
+		t.Fatal("refresh must update only log content on the current page")
 	}
 	find("日志详情").click()
 	pump()

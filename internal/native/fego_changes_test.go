@@ -88,7 +88,7 @@ func TestRoutingConfigNameRowAndPreviewActivity(t *testing.T) {
 		input := v.inputs["fileName"]
 		b := input.pointer.Bounds()
 		for _, w := range v.widgets {
-			if w.parent == input.parent && w.text == "名称" {
+			if w.parent != nil && w.parent.parent == input.parent && w.text == "名称" {
 				label := w.pointer.Bounds()
 				if b.X <= label.X+label.W || label.Y < b.Y || label.Y+label.H > b.Y+b.H {
 					t.Fatalf("name label %v and input %v should share a row", label, b)

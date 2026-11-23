@@ -12,6 +12,7 @@ import (
 
 	"github.com/zatxm/lanboat-app/internal/profile"
 	"github.com/zatxm/lanboat-app/internal/ruledata"
+	"go.uber.org/zap"
 )
 
 const MaxBackups = 3
@@ -43,7 +44,17 @@ func (a *App) Backups() []BackupInfo {
 	sort.Slice(list, func(i, j int) bool { return list[i].ID > list[j].ID })
 	return list
 }
-func (a *App) CreateBackup() (BackupInfo, error) {
+func (a *App) CreateBackup() (_ BackupInfo, err error) {
+	started := time.Now()
+	a.log.Info("backup started")
+	defer func() {
+		duration := zap.Duration("duration", time.Since(started))
+		if err != nil {
+			a.log.Warn("backup failed", duration, zap.Error(err))
+		} else {
+			a.log.Info("backup completed", duration)
+		}
+	}()
 	a.ruleUpdateMu.Lock()
 	defer a.ruleUpdateMu.Unlock()
 	if len(a.Backups()) >= MaxBackups {

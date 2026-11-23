@@ -63,6 +63,9 @@ func applyNodeRuleOverlay(p *routing.Parsed, c Config) error {
 			nodes[n.Name] = n.ID
 		}
 	}
+	for _, g := range c.PolicyGroups {
+		groups[g.Ref()] = g.Ref()
+	}
 	resolve := func(action string) (string, error) {
 		if name := groups[action]; name != "" {
 			return name, nil

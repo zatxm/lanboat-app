@@ -62,7 +62,8 @@ type nativeView struct {
 	theme                                               string
 	language                                            string
 	window                                              *fego.Window
-	compact                                             bool
+	compact, compactRouting                             bool
+	formAlignmentPending                                bool
 	events                                              fego.View
 	doc                                                 *ui.Document
 	tester                                              *ui.Tester
@@ -72,6 +73,7 @@ type nativeView struct {
 	shell, scroll, main, body                           *widget
 	editorScroll                                        *widget
 	popupRoot, popupError                               *widget
+	updateCheck                                         *widget
 	popupShown                                          *popup
 	bannerRows                                          [3]*widget
 	dismissedCoreError                                  string
@@ -92,6 +94,8 @@ type nativeView struct {
 	delayLabels                                         map[string]*widget
 	logContainer, logPager                              *widget
 	logSignature                                        string
+	backupList, backupCreate                            *widget
+	backupRows                                          []desktop.BackupInfo
 }
 
 var active *nativeView
@@ -523,6 +527,7 @@ func (v *nativeView) refreshLanguage() {
 		return
 	}
 	v.language = lang
+	v.formAlignmentPending = true
 	if v.tray != nil {
 		if err := v.tray.SetMenu(v.trayMenu()); err != nil {
 			v.logger.Warn("update system tray menu", zap.Error(err))
@@ -658,13 +663,14 @@ func (d eventView) PaintIfDirty() { d.View.(interface{ PaintIfDirty() }).PaintIf
 func (d eventView) Event(e fego.Event) {
 	if e.Kind == fego.Resize && e.Width > 0 {
 		v := d.v
-		compact := float32(e.Width)/max(1, e.Scale) < 940
-		if compact != v.compact {
-			v.compact = compact
-			if v.window != nil && (v.ui.editor == "import" || v.ui.editor == "" && v.ui.detail == "" &&
-				(v.ui.page == "home" || v.ui.page == "data")) {
-				v.render()
-			}
+		width := float32(e.Width) / max(1, e.Scale)
+		compact, compactRouting := width < 940, width < 1080
+		changed, routingChanged := compact != v.compact, compactRouting != v.compactRouting
+		v.compact, v.compactRouting = compact, compactRouting
+		u := v.ui
+		if v.window != nil && (changed && (u.editor == "import" || u.editor == "" && u.detail == "" &&
+			(u.page == "home" || u.page == "data")) || routingChanged && u.page == "config" && u.editor == "" && u.detail == "") {
+			v.render()
 		}
 	}
 	if e.Kind == fego.KeyDown && e.Key == "Escape" && d.v.ui.popup != nil {
