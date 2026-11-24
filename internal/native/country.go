@@ -8,6 +8,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 type flagEntry struct {
@@ -15,11 +17,24 @@ type flagEntry struct {
 	until time.Time
 }
 
-func countryFlag(code string) string {
-	if len(code) != 2 {
-		return "🌐"
+// A leading country flag belongs in the list's flag slot, outside the text renderer.
+func splitNodeFlag(name string) (label, code string) {
+	const regionalA, regionalZ = '🇦', '🇿'
+	text := strings.TrimLeftFunc(name, unicode.IsSpace)
+	a, n := utf8.DecodeRuneInString(text)
+	if a < regionalA || a > regionalZ {
+		return name, ""
 	}
-	return string([]rune{0x1f1e6 + rune(code[0]-'a'), 0x1f1e6 + rune(code[1]-'a')})
+	b, m := utf8.DecodeRuneInString(text[n:])
+	if b < regionalA || b > regionalZ {
+		return name, ""
+	}
+	code = string([]byte{byte(a-regionalA) + 'a', byte(b-regionalA) + 'a'})
+	label = strings.TrimSpace(strings.TrimLeft(text[n+m:], "\uFE0E\uFE0F"))
+	if label == "" {
+		label = strings.ToUpper(code)
+	}
+	return label, code
 }
 
 func (u *UI) refreshFlags(visible bool) {

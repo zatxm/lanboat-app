@@ -66,11 +66,22 @@ func coreOutbound(n profile.Node) map[string]any {
 		out["obfs"] = n.TextOption("obfs")
 	case "hysteria2":
 		out["password"] = n.Password
+		for _, key := range []string{"up", "down"} {
+			if speed := number(key, 0); speed > 0 {
+				out[key+"_mbps"] = speed
+			}
+		}
 		if n.TextOption("obfs") != "" {
 			out["obfs"] = map[string]any{"type": n.TextOption("obfs"), "password": n.TextOption("obfs-password")}
 		}
 		if ports := n.TextOption("ports"); ports != "" {
-			out["server_ports"] = strings.Split(strings.ReplaceAll(ports, "-", ":"), ",")
+			delete(out, "server_port")
+			out["server_ports"] = strings.FieldsFunc(strings.ReplaceAll(ports, "-", ":"), func(r rune) bool {
+				return r == ',' || r == ' ' || r == '\t'
+			})
+			if interval := n.TextOption("hop-interval"); interval != "" {
+				out["hop_interval"] = interval
+			}
 		}
 	case "tuic":
 		out["uuid"] = n.TextOption("uuid")

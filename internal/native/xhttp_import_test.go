@@ -99,6 +99,16 @@ func TestSubscriptionImportSwitchAndRuleScope(t *testing.T) {
 			toggle.click()
 		}
 		address.edit(server.URL)
+		agent := v.inputs["nodeImportUA.choice"]
+		agent.edit("custom")
+		v.flush()
+		v.tester.Step()
+		input := v.inputs["nodeImportUA"]
+		got, want := input.pointer.Bounds(), agent.pointer.Bounds()
+		if !input.visible || got.X != want.X || got.W != want.W || got.Y < want.Y+want.H {
+			t.Fatalf("custom UserAgent input should match the import dropdown: got %v, dropdown %v", got, want)
+		}
+		input.edit("ImportFixture")
 		v.save.click()
 		waitJob(t, u)
 		if u.err != "" || u.editor != "" {
@@ -111,6 +121,9 @@ func TestSubscriptionImportSwitchAndRuleScope(t *testing.T) {
 	}
 	first, second := c.Subscriptions[0], c.Subscriptions[1]
 	rule := c.RuleOverlays[0]
+	if first.UserAgent != "ImportFixture" || second.UserAgent != "ImportFixture" {
+		t.Fatal("the custom UserAgent was not stored on import")
+	}
 	if first.KeepRules || !second.KeepRules || c.Nodes[0].Source != first.ID || c.Nodes[1].Source != second.ID || rule.SubscriptionID != second.ID || !slices.Equal(rule.NodeIDs, []string{c.Nodes[1].ID}) || !strings.Contains(rule.Content, "retained.example") {
 		t.Fatal("imported rules did not follow the per-subscription switch")
 	}

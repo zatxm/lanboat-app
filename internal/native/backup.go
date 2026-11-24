@@ -14,14 +14,14 @@ func (u *UI) openBackups() { u.openDetail("backups") }
 func (v *nativeView) backupsPage() {
 	u := v.ui
 	imp := v.button("导入备份", "link icon-only icon-upload backup-action", false, false, func() {
-		path := chooseFile("导入备份", "*")
-		if path == "" {
-			return
-		}
-		u.confirm = &deletion{kind: "backup-restore", prompt: "导入将替换全部设置，是否继续？", run: func() {
-			u.submit(func() error { return u.backend.ImportBackup(path) }, func() { u.render() })
-		}}
-		u.notify()
+		u.pickFile("导入备份", "*", func(path string) {
+			if path != "" {
+				u.confirm = &deletion{kind: "backup-restore", prompt: "导入将替换全部设置，是否继续？", run: func() {
+					u.submit(func() error { return u.backend.ImportBackup(path) }, func() { u.render() })
+				}}
+				u.notify()
+			}
+		})
 	})
 	v.backupCreate = v.button("立即备份", "link icon-only icon-add backup-action", false, false, u.createBackup)
 	v.backupList = v.box("panel group", false, 0, false)
@@ -91,10 +91,5 @@ func (u *UI) deleteBackup(id string) {
 	})
 }
 func (u *UI) downloadBackup(id string) {
-	directory := chooseDirectory("选择保存目录")
-	if directory == "" {
-		return
-	}
-	var saved string
-	u.submit(func() error { var err error; saved, err = u.backend.ExportBackupTo(id, directory); return err }, func() { u.notice = fmt.Sprintf("已导出到：\n%s", saved) })
+	u.saveFile(func(directory string) (string, error) { return u.backend.ExportBackupTo(id, directory) })
 }

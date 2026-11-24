@@ -8,9 +8,18 @@ import (
 	"github.com/zatxm/lanboat-app/internal/profile"
 )
 
-func (v *nativeView) nodeRow(title string, control *widget) *widget {
+func (v *nativeView) nodeRow(title string, control *widget, below ...*widget) *widget {
 	label := v.box("node-field-key", true, 0, false, v.label(title, "field-label"))
 	label.pointer.Justify(ui.End)
+	if len(below) > 0 {
+		label.pointer.Height(38)
+		column := v.box("", false, 7, true, control)
+		column.pointer.AlignItems(ui.Stretch)
+		v.pack(column, below...)
+		row := v.box("field", true, 12, false, label, column)
+		row.pointer.AlignItems(ui.Start)
+		return row
+	}
 	if !hasClass(control.classes, "switch") {
 		control.setExpand(true)
 	}

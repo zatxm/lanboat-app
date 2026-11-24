@@ -206,9 +206,9 @@ func TestLatencyJobDoesNotBlockOrReplacePageState(t *testing.T) {
 		t.Fatal("latency job took exclusive UI lock")
 	}
 	u.navigate("settings")
-	u.changeSettings(func(s *profile.Settings) { s.Mode = "direct" })
+	u.changeSettings(func(s *profile.Settings) { s.Mode = "global" })
 	waitJob(t, u)
-	if u.page != "settings" || u.state.Config.Settings.Mode != "direct" || len(u.delays) != 1 {
+	if u.page != "settings" || u.state.Config.Settings.Mode != "global" || len(u.delays) != 1 {
 		t.Fatal("latency job replaced current page or settings", u.err)
 	}
 }

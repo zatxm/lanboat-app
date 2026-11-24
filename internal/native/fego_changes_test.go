@@ -9,6 +9,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/zatxm/fego/v26"
 	"time"
 
 	"github.com/zatxm/lanboat-app/internal/desktop"
@@ -171,8 +173,15 @@ func TestHomeSearchRespondsToIconAndExportNoticeWraps(t *testing.T) {
 	bounds := field.pointer.Bounds()
 	v.tester.Click(bounds.X+18, bounds.Y+bounds.H/2)
 	v.tester.Type("fixture")
-	if got := u.field("search").Text(); got != "fixture" {
+	if got := u.field("search.draft").Text(); got != "fixture" {
 		t.Fatalf("clicking the search icon did not focus the search box, query %q", got)
+	}
+	if got := u.field("search").Text(); got != "" {
+		t.Fatalf("typing applied the search before submitting, query %q", got)
+	}
+	v.tester.Send(fego.Event{Kind: fego.KeyDown, Key: "Enter"})
+	if got := u.field("search").Text(); got != "fixture" {
+		t.Fatalf("Enter did not submit the search, query %q", got)
 	}
 	search := v.inputs["search"].pointer.Bounds()
 	photo := v.tester.Snapshot()

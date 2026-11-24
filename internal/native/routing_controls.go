@@ -85,7 +85,7 @@ func (u *UI) policyLabel(value string) string {
 	}
 	return value
 }
-func (u *UI) saveRoutingContent(content string, back bool) {
+func (u *UI) saveRoutingContent(content string) {
 	f, ok := u.routingFile()
 	if !ok {
 		return
@@ -101,14 +101,13 @@ func (u *UI) saveRoutingContent(content string, back bool) {
 		return
 	}
 	u.submit(func() error { return u.backend.SaveConfigFile(f.ID, f.Name, content) }, func() {
-		if back {
-			u.back()
-		} else {
-			u.render()
+		if u.popup != nil && u.popup.kind == "file-rule-editor" {
+			u.closePopup()
 		}
+		u.render()
 	})
 }
-func (u *UI) modifyRoutingLine(line int, text string, back bool) {
+func (u *UI) modifyRoutingLine(line int, text string) {
 	f, ok := u.routingFile()
 	if !ok {
 		return
@@ -119,28 +118,38 @@ func (u *UI) modifyRoutingLine(line int, text string, back bool) {
 		u.notify()
 		return
 	}
-	u.saveRoutingContent(content, back)
+	u.saveRoutingContent(content)
 }
 func (u *UI) editRoutingRule(entry *routing.Entry) {
-	u.field("route.line").SetText("0")
+	editor := &popup{kind: "file-rule-editor", title: "添加规则"}
 	u.field("route.type").SetText("DOMAIN-SUFFIX")
 	u.field("route.value").SetText("")
 	u.field("route.action").SetText("proxy")
 	u.field("route.noResolve").SetText("false")
 	u.field("route.disabled").SetText("false")
 	if entry != nil {
+		editor.title = "编辑规则"
 		r := entry.Rule
-		u.field("route.line").SetText(strconv.Itoa(r.Line))
+		editor.routingRule = r
 		u.field("route.type").SetText(r.Type)
 		u.field("route.value").SetText(r.Value)
 		u.field("route.action").SetText(r.Action)
 		u.field("route.noResolve").SetText(strconv.FormatBool(r.NoResolve))
 		u.field("route.disabled").SetText(strconv.FormatBool(entry.Disabled))
 	}
-	u.openEditor("file-rule")
+	u.popup = editor
+	u.notify()
 }
 func (u *UI) saveRoutingRule() {
-	r := routing.Rule{Type: u.field("route.type").Text(), Value: strings.TrimSpace(u.field("route.value").Text()), Action: u.field("route.action").Text(), NoResolve: u.field("route.noResolve").Text() == "true"}
+	r := u.popup.routingRule
+	r.Type = u.field("route.type").Text()
+	value := strings.TrimSpace(u.field("route.value").Text())
+	if r.Type != "RULE-SET" || value != r.Value {
+		r.SetHeaders, r.SetInterval = nil, 0
+	}
+	r.Value = value
+	r.Action = u.field("route.action").Text()
+	r.NoResolve = u.field("route.noResolve").Text() == "true"
 	text := r.Text()
 	if _, err := routing.Parse("[Rule]\n" + text); err != nil {
 		u.err = err.Error()
@@ -150,9 +159,8 @@ func (u *UI) saveRoutingRule() {
 	if u.field("route.disabled").Text() == "true" {
 		text = routing.DisabledPrefix + text
 	}
-	line, _ := strconv.Atoi(u.field("route.line").Text())
-	if line > 0 {
-		u.modifyRoutingLine(line, text, true)
+	if r.Line > 0 {
+		u.modifyRoutingLine(r.Line, text)
 		return
 	}
 	f, ok := u.routingFile()
@@ -165,13 +173,23 @@ func (u *UI) saveRoutingRule() {
 		u.notify()
 		return
 	}
-	u.saveRoutingContent(content, true)
+	u.saveRoutingContent(content)
 }
 func (v *nativeView) routingRuleFields(box *widget) {
 	u := v.ui
 	value := v.input("route.value", ruleHint(u.field("route.type").Text()), false, false, false)
-	v.pack(box, v.selectField("匹配类型", u.field("route.type").Text(), routingTypes, func(s string) { u.field("route.type").SetText(s); value.setPlaceholder(ruleHint(s)) }),
-		v.box("field", false, 7, false, v.label("匹配内容", "field-label"), value), v.policySelect(u.field("route.action").Text(), func(s string) { u.field("route.action").SetText(s) }), v.formSwitch("route.noResolve", "不解析域名"), v.formSwitch("route.disabled", "停用规则"))
+	kind := v.selectWidget(u.field("route.type").Text(), routingTypes, false, func(s string) {
+		u.field("route.type").SetText(s)
+		value.setPlaceholder(ruleHint(s))
+	})
+	policy := v.policyChoice(u.field("route.action").Text(), func(s string) { u.field("route.action").SetText(s) })
+	for _, control := range []*widget{kind, value, policy} {
+		control.setExpand(true)
+	}
+	v.pack(box, v.compactFormRow("匹配类型", kind), v.compactFormRow("匹配内容", value), v.compactFormRow("策略", policy),
+		v.compactFormRow("不解析域名", v.switchInput("route.noResolve", "不解析域名")),
+		v.compactFormRow("停用规则", v.switchInput("route.disabled", "停用规则")))
+	v.dialogActions(box, u.saveRoutingRule)
 }
 func (v *nativeView) switchInput(key, title string) *widget {
 	u := v.ui
@@ -220,22 +238,17 @@ func (v *nativeView) routingControlPage() {
 			})
 		}))
 	}
-	v.pack(toolbar, v.button("策略组", "link icon-layers", false, false, func() { u.openDetail("routing-groups") }))
-	if !readOnly {
-		v.pack(toolbar, v.button("添加", "primary tight-icon", true, false, func() { u.editRoutingRule(nil) }))
-	}
 	v.pack(v.body, toolbar)
 	if readOnly {
 		v.pack(v.body, v.label("默认配置为只读，请先复制后修改", "help"))
 	}
 	entries, _ := routing.Entries(f.Content)
-	search := v.input("routingSearch", "搜索规则", false, false, false)
-	search.event = func(event, value string) {
-		u.field("routingSearch").SetText(value)
+	search := v.searchBox("routingSearch", "搜索规则", func() {
 		u.field("page.routing").SetText("0")
+		u.resetScroll = true
 		u.focus = "routingSearch"
 		u.render()
-	}
+	})
 	search.setExpand(true)
 	final := v.selectWidget(p.Final, u.policyOptions(), false, func(action string) {
 		current, ok := u.routingFile()
@@ -264,7 +277,11 @@ func (v *nativeView) routingControlPage() {
 	if !readOnly {
 		v.inputs["routingFinal"] = final
 	}
-	v.pack(v.body, v.box("", true, 16, false, search, v.label("未匹配时", "field-label tight-label"), final))
+	fallback := v.box("", true, 6, false, v.label("未匹配时", "field-label tight-label"), final)
+	if !readOnly {
+		v.pack(fallback, v.button("添加", "link icon-only icon-add", true, false, func() { u.editRoutingRule(nil) }))
+	}
+	v.pack(v.body, v.box("", true, 12, false, search, fallback))
 	v.editorScroll = v.create("scroll", props{classes: "editor-scroll", expand: true})
 	v.pack(v.body, v.box("panel group list-frame", false, 0, true, v.editorScroll))
 	list := v.box("", false, 0, false)
@@ -302,13 +319,13 @@ func (v *nativeView) routingControlPage() {
 			if !entry.Disabled {
 				text = routing.DisabledPrefix + text
 			}
-			u.modifyRoutingLine(r.Line, text, false)
+			u.modifyRoutingLine(r.Line, text)
 		})
 		move := func(delta int) {
 			other := entries[i+delta].Rule
 			lines := strings.Split(f.Content, "\n")
 			lines[r.Line-1], lines[other.Line-1] = lines[other.Line-1], lines[r.Line-1]
-			u.saveRoutingContent(strings.Join(lines, "\n"), false)
+			u.saveRoutingContent(strings.Join(lines, "\n"))
 		}
 		row := v.box(class, true, 8, false, v.label(strconv.Itoa(i+1), "help"), v.box("", false, 5, true, v.dataLabel(r.Value, "node-name node-title"), v.dataLabel(func() string {
 			if entry.Disabled {
@@ -317,7 +334,7 @@ func (v *nativeView) routingControlPage() {
 			return r.Type
 		}(), "help")), v.dataLabel(u.policyLabel(r.Action), "strategy"), toggle,
 			v.button("编辑", "link icon-only icon-edit", true, readOnly, func() { u.editRoutingRule(&entry) }), v.button("上移", "link icon-only icon-up", true, readOnly || i == 0, func() { move(-1) }), v.button("下移", "link icon-only icon-down", true, readOnly || i == len(entries)-1, func() { move(1) }), v.button("删除", "link icon-only icon-delete", true, readOnly, func() {
-				u.confirm = &deletion{kind: "file-rule", name: r.Value, run: func() { u.modifyRoutingLine(r.Line, "", false) }}
+				u.confirm = &deletion{kind: "file-rule", name: r.Value, run: func() { u.modifyRoutingLine(r.Line, "") }}
 				u.notify()
 			}))
 		v.pack(list, row)
@@ -390,8 +407,12 @@ func ruleHint(kind string) string {
 	return "example.com"
 }
 
-func (v *nativeView) policySelect(current string, apply func(string)) *widget {
+func (v *nativeView) policyChoice(current string, apply func(string)) *widget {
 	choice := v.selectWidget(current, v.ui.policyOptions(), false, apply)
 	v.inputs["policy"] = choice
-	return v.box("field", false, 7, false, v.label("策略", "field-label"), choice)
+	return choice
+}
+
+func (v *nativeView) policySelect(current string, apply func(string)) *widget {
+	return v.box("field", false, 7, false, v.label("策略", "field-label"), v.policyChoice(current, apply))
 }

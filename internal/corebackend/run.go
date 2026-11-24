@@ -22,7 +22,33 @@ import (
 	"go.uber.org/zap"
 )
 
+type Tunnel struct {
+	Device  io.ReadWriteCloser
+	Info    native.DesktopTUNInfo
+	Protect func(uintptr) error
+	Done    <-chan struct{}
+}
+
+type OpenTunnel func(context.Context) (Tunnel, error)
+
 func Run(ctx context.Context, input io.Reader, output io.Writer) error {
+	return RunAttached(ctx, input, output, desktopTunnel)
+}
+
+func desktopTunnel(ctx context.Context) (Tunnel, error) {
+	executable, err := os.Executable()
+	if err != nil {
+		return Tunnel{}, err
+	}
+	device, err := tunbridge.Open(ctx, executable)
+	if err != nil {
+		return Tunnel{}, err
+	}
+	return Tunnel{Device: device, Info: native.DesktopTUNInfo{Name: device.Info.Name, Mark: device.Info.Mark},
+		Protect: device.Protect, Done: device.Done}, nil
+}
+
+func RunAttached(ctx context.Context, input io.Reader, output io.Writer, open OpenTunnel) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	var mu sync.Mutex
@@ -79,16 +105,12 @@ func Run(ctx context.Context, input io.Reader, output io.Writer) error {
 		if err := allinone.Check(ctx, init.Config); err != nil {
 			return fail(err)
 		}
-		exe, err := os.Executable()
+		device, err := open(ctx)
 		if err != nil {
 			return fail(err)
 		}
-		device, err := tunbridge.Open(ctx, exe)
-		if err != nil {
-			return fail(err)
-		}
-		defer device.Close()
-		ctx = native.WithDesktopTUN(ctx, native.DesktopTUNInfo{Name: device.Info.Name, Mark: device.Info.Mark}, device, device.Protect)
+		defer device.Device.Close()
+		ctx = native.WithDesktopTUN(ctx, device.Info, device.Device, device.Protect)
 		if device.Done != nil {
 			go func() {
 				select {

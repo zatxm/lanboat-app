@@ -2,6 +2,7 @@ package native
 
 import (
 	"github.com/zatxm/lanboat-app/internal/appmeta"
+	"github.com/zatxm/lanboat-app/internal/routing"
 	"github.com/zatxm/lanboat-app/internal/traffic"
 	"runtime"
 	"strings"
@@ -11,6 +12,7 @@ import (
 
 type popup struct {
 	networkLog                         *traffic.Entry
+	routingRule                        routing.Rule
 	kind, title, link, bitmap, qrError string
 	deletion                           *deletion
 	previous                           *popup
@@ -86,6 +88,10 @@ func (v *nativeView) syncPopup() {
 		switch u.confirm.kind {
 		case "node", "localnodes":
 			title = "节点"
+		case "file-rule", "rule":
+			title = "规则"
+		case "routing-group":
+			title = "策略组"
 		}
 		u.popup = &popup{kind: "confirm", title: title, deletion: u.confirm}
 	}
@@ -203,12 +209,9 @@ func (v *nativeView) syncPopup() {
 			} else if p.kind == "routing-group" {
 				width, height = 560, 0
 				v.routingGroupFields(box)
-			} else if p.kind == "group-test-members" {
-				width, height = 480, 0
-				v.groupTestMembers(box)
-			} else if p.kind == "group-test-settings" {
-				width, height = 620, 0
-				v.groupTestURLEditor(box)
+			} else if p.kind == "file-rule-editor" {
+				width, height = 560, 0
+				v.routingRuleFields(box)
 			} else if p.kind == "speed-settings" || p.kind == "test-settings" {
 				width, height = 620, 0
 				v.connectivityEditor(box, p.kind == "speed-settings")

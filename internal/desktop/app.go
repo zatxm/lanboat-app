@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"runtime/debug"
 	"slices"
 	"strconv"
@@ -19,6 +20,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/zatxm/lanboat-app/internal/appmeta"
+	"github.com/zatxm/lanboat-app/internal/coreipc"
 	"github.com/zatxm/lanboat-app/internal/engine"
 	"github.com/zatxm/lanboat-app/internal/i18n"
 	"github.com/zatxm/lanboat-app/internal/profile"
@@ -42,6 +44,7 @@ type App struct {
 	config           profile.Config
 	path             string
 	engine           *engine.Engine
+	mobile           bool
 	proxy            SystemProxy
 	networkLogs      *traffic.Store
 	log              *zap.Logger
@@ -102,9 +105,9 @@ func New(dir, core string, log *zap.Logger, logs *Logs) (*App, error) {
 		}
 	}
 	a := &App{config: c, path: path, engine: engine.New(core, filepath.Join(dir, "runtime"), log), proxy: proxy, log: log, logs: logs,
-		client: &http.Client{Timeout: 20 * time.Second, Transport: &http.Transport{Proxy: nil}, CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		client: &http.Client{Timeout: 20 * time.Second, Transport: &http.Transport{ForceAttemptHTTP2: true}, CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) >= 5 || req.URL.User != nil || (req.URL.Scheme != "https" && req.URL.Scheme != "http") || len(via) > 0 && via[0].URL.Scheme == "https" && req.URL.Scheme != "https" {
-				return errors.New("订阅重定向无效（最多 5 次，HTTPS 不能降级）")
+				return errSubscriptionRedirect
 			}
 			return nil
 		}}}
@@ -126,6 +129,27 @@ func New(dir, core string, log *zap.Logger, logs *Logs) (*App, error) {
 	}
 	a.mirrorConfigs(c)
 	return a, nil
+}
+
+func (a *App) UseMobileLauncher(launch coreipc.Launcher) {
+	a.mobile = true
+	a.engine.SetMobileLauncher(launch)
+	a.normalizeMobileSettings(&a.config.Settings)
+}
+
+func (a *App) normalizeMobileSettings(settings *profile.Settings) {
+	if !a.mobile {
+		return
+	}
+	settings.SystemProxy = false
+	if runtime.GOOS == "ios" {
+		settings.Mode = "global"
+		settings.Proxy.Upstream.Enabled = false
+	} else if settings.Mode == "tun" {
+		settings.Mode = "global"
+	} else if settings.Mode == "direct" {
+		settings.Mode = "rule"
+	}
 }
 
 func (a *App) GetState() State {
@@ -210,6 +234,7 @@ func (a *App) GetLogs() []LogEntry { return a.logs.List() }
 
 func (a *App) commit(c profile.Config) error { return a.commitWithRuleData(c, false, nil) }
 func (a *App) commitWithRuleData(c profile.Config, force bool, restoreData func() error) error {
+	a.normalizeMobileSettings(&c.Settings)
 	overlaysChanged := !reflect.DeepEqual(a.config.RuleOverlays, c.RuleOverlays)
 	if overlaysChanged {
 		if err := profile.ValidateRuleOverlays(c.RuleOverlays); err != nil {
@@ -536,13 +561,23 @@ func (a *App) RefreshSubscription(id string) (int, error) {
 }
 
 func (a *App) downloadSubscription(sub profile.Subscription, customHeaders ...map[string][]string) (string, error) {
-	req, _ := http.NewRequest(http.MethodGet, sub.URL, nil)
-	req.Header.Set("User-Agent", "Lanboat/"+appmeta.Version)
-	if sub.UserAgent != "" {
-		req.Header.Set("User-Agent", sub.UserAgent)
+	req, err := http.NewRequest(http.MethodGet, sub.URL, nil)
+	if err != nil {
+		return "", errors.New("订阅地址必须是有效的 HTTP 或 HTTPS URL")
 	}
+	agent, fallbackAgent := sub.UserAgent, ""
+	if agent == "" {
+		agent, fallbackAgent = profile.SubscriptionFormatAgent(req.URL)
+		if agent == "" {
+			agent = "Lanboat/" + appmeta.Version
+		}
+	}
+	req.Header.Set("User-Agent", agent)
 	if len(customHeaders) > 0 {
 		for name, values := range customHeaders[0] {
+			if len(values) > 0 && strings.EqualFold(name, "User-Agent") {
+				fallbackAgent = ""
+			}
 			for i, value := range values {
 				if i == 0 {
 					req.Header.Set(name, value)
@@ -553,25 +588,32 @@ func (a *App) downloadSubscription(sub profile.Subscription, customHeaders ...ma
 		}
 	}
 	client := a.client
-	if sub.Insecure != "" {
+	if sub.Insecure == "true" {
 		copy := *a.client
 		transport := a.client.Transport.(*http.Transport).Clone()
 		if transport.TLSClientConfig == nil {
 			transport.TLSClientConfig = &tls.Config{}
-		} else {
-			transport.TLSClientConfig = transport.TLSClientConfig.Clone()
 		}
-		transport.TLSClientConfig.InsecureSkipVerify = sub.Insecure == "true"
+		transport.TLSClientConfig.InsecureSkipVerify = true
 		defer transport.CloseIdleConnections()
 		copy.Transport = transport
 		client = &copy
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", errors.New("下载订阅失败，请检查网络和订阅地址")
+		return "", subscriptionDownloadError(err)
+	}
+	if resp.StatusCode == http.StatusForbidden && fallbackAgent != "" {
+		resp.Body.Close()
+		retry := req.Clone(req.Context())
+		retry.Header.Set("User-Agent", fallbackAgent)
+		resp, err = client.Do(retry)
+		if err != nil {
+			return "", subscriptionDownloadError(err)
+		}
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("订阅服务器返回 HTTP %d", resp.StatusCode)
 	}
 	b, err := io.ReadAll(io.LimitReader(resp.Body, profile.MaxSubscription+1))

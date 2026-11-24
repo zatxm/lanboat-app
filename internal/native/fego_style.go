@@ -59,9 +59,15 @@ func (w *widget) style() {
 	case is("stats-grid"):
 		e.AlignItems(ui.Stretch)
 	case is("sidebar"):
-		e.Width(200).Padding(24, 14).Background(t.Sidebar)
+		e.Width(64).Padding(20, 10).Background(t.Sidebar)
+	case is("bottom-navigation"):
+		e.Height(58).Padding(7, 12).Justify(ui.SpaceBetween).Background(t.Sidebar)
 	case is("main"):
-		e.Padding(20, 32, 28, 30)
+		if w.view.mobile {
+			e.Padding(12, 14, 18, 14)
+		} else {
+			e.Padding(20, 32, 28, 30)
+		}
 	case is("header"):
 		e.Padding(14, 32, 10, 30).MinHeight(62)
 	case is("nav-item"):
@@ -69,8 +75,7 @@ func (w *widget) style() {
 		if is("active") {
 			bg, fg = t.Raised, t.Accent
 		}
-		e.Height(46).Padding(0, 12).Gap(45).Radius(8).Background(bg)
-		w.buttonCaption.FontSize(15).TextColor(fg)
+		e.Size(44, 44).Justify(ui.Center).Radius(10).Background(bg)
 		w.iconColor = fg
 	case is("panel") || is("option-group") || is("dialog-surface"):
 		padding, radius := float32(18), float32(panelRadius)
@@ -312,18 +317,18 @@ func (w *widget) paintLineIcon(p *ui.Painter, icon string) {
 	case "activity":
 		start := float32(time.Now().UnixMilli()%780) * (2 * math.Pi / 780)
 		arc(0, 0, 6, start, start+1.5*math.Pi)
-	case "sail":
-		path(pair(-7, 6), pair(-4, 8), pair(5, 8), pair(8, 5), pair(-8, 5))
-		path(pair(-1, -7), pair(-6, 2), pair(-1, 2), pair(-1, -7))
-		path(pair(2, -5), pair(7, 2), pair(2, 2))
 	case "home":
 		path(pair(-8, -1), pair(0, -8), pair(8, -1))
 		path(pair(-6, 0), pair(-6, 7), pair(-2, 7), pair(-2, 2), pair(2, 2), pair(2, 7), pair(6, 7), pair(6, 0))
 	case "data", "test":
 		path(pair(-8, 0), pair(-4, 0), pair(-2, -6), pair(1, 7), pair(4, -2), pair(6, 0), pair(8, 0))
-	case "settings":
-		ring(0, 0, 5)
-		ring(0, 0, 2)
+	case "sun", "settings":
+		if icon == "sun" {
+			ring(0, 0, 3.6)
+		} else {
+			ring(0, 0, 5)
+			ring(0, 0, 2)
+		}
 		for i := 0; i < 8; i++ {
 			a := float64(i) * math.Pi / 4
 			s, c := math.Sincos(a)
@@ -376,7 +381,7 @@ func (w *widget) paintLineIcon(p *ui.Painter, icon string) {
 	case "add":
 		line(0, -6, 0, 6)
 		line(-6, 0, 6, 0)
-	case "check", "save":
+	case "check":
 		path(pair(-6, 0), pair(-2, 4), pair(7, -5))
 	case "refresh":
 		arc(0, 0, 6.3, -math.Pi+.18, -.35)
@@ -403,13 +408,9 @@ func (w *widget) paintLineIcon(p *ui.Painter, icon string) {
 		}
 		line(0, -7*dir, 0, 3*dir)
 		path(pair(-3.5, -0.5*dir), pair(0, 3*dir), pair(3.5, -0.5*dir))
-	case "back", "forward":
-		dir := float32(1)
-		if icon == "forward" {
-			dir = -1
-		}
-		path(pair(-dir, -5), pair(-6*dir, 0), pair(-dir, 5))
-		line(-6*dir, 0, 6*dir, 0)
+	case "back":
+		path(pair(-1, -5), pair(-6, 0), pair(-1, 5))
+		line(-6, 0, 6, 0)
 	case "fold-down":
 		path(pair(-4, -2), pair(0, 2), pair(4, -2))
 	case "chevron":
@@ -439,7 +440,7 @@ func (w *widget) paintLineIcon(p *ui.Painter, icon string) {
 		for _, cx := range []float32{-5, 5} {
 			path(pair(cx-3, 3), pair(cx+3, 3), pair(cx+3, 8), pair(cx-3, 8), pair(cx-3, 3))
 		}
-	case "globe", "dns":
+	case "globe":
 		ring(0, 0, 7)
 		line(-6, 0, 6, 0)
 		arc(0, 0, 6, -1.6, 1.6)
@@ -478,33 +479,17 @@ func (w *widget) paintLineIcon(p *ui.Painter, icon string) {
 		path(pair(4, -6), pair(7, -3), pair(4, 0))
 		path(pair(-4, 0), pair(-7, 3), pair(-4, 6))
 	case "moon":
-		ring(0, 0, 7)
-		line(0, -7, 0, 7)
-		line(-2.5, -6.5, -2.5, 6.5)
-		line(-5, -5, -5, 5)
-	case "link":
-		arc(-3, 0, 3.5, math.Pi/2, 3*math.Pi/2)
-		arc(3, 0, 3.5, -math.Pi/2, math.Pi/2)
-		line(-3, -3.5, 3, -3.5)
-		line(-3, 3.5, 3, 3.5)
-		line(-2, 0, 2, 0)
+		var moon ui.Path
+		moon.MoveTo(x+2, y-7)
+		moon.CubicTo(x-2, y-8, x-7, y-5, x-7, y)
+		moon.CubicTo(x-7, y+7, x+2, y+10, x+7, y+3)
+		moon.CubicTo(x+1, y+4, x-3, y-3, x+2, y-7)
+		moon.Close()
+		p.StrokePath(&moon, 1.25, c)
 	case "logs":
 		path(pair(-6, -7), pair(6, -7), pair(6, 7), pair(-6, 7), pair(-6, -7))
 		line(-3, -3, 3, -3)
 		line(-3, 0, 3, 0)
 		line(-3, 3, 1, 3)
-	case "file":
-		path(pair(-6, -7), pair(2, -7), pair(6, -3), pair(6, 7), pair(-6, 7), pair(-6, -7))
-		path(pair(2, -7), pair(2, -3), pair(6, -3))
-	case "play":
-		path(pair(-4, -6), pair(6, 0), pair(-4, 6), pair(-4, -6))
-	case "":
-	default:
-		g := glyphs[icon]
-		if g == "" {
-			g = "›"
-		}
-		width, height := p.Measure(g, 15, false)
-		p.Label(g, x-width/2, y-height/2, 15, c, false)
 	}
 }

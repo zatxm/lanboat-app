@@ -2,7 +2,7 @@
 
 **English** · [简体中文](README.zh-CN.md)
 
-Lanboat is a desktop proxy client for Linux, Windows, and macOS. Import your proxy nodes or subscriptions, choose how traffic is routed, and manage DNS and connection logs from one app.
+Lanboat is a lightweight proxy client for Linux, Windows, macOS, Android, and iOS, designed to keep CPU and memory use low. Import proxy nodes or subscriptions, route traffic using rules or through the selected node, and manage DNS and connection logs in the app.
 
 ## Install
 
@@ -22,13 +22,19 @@ On Linux, open Lanboat from your application menu as your desktop user. Lanboat 
 
 While Lanboat is running, use its tray icon to show the main window or quit. The icon appears in the Linux desktop panel, Windows notification area, or macOS menu bar. On GNOME, enable the AppIndicator extension if the panel does not show tray icons.
 
+### Mobile
+
+On Android 6 or later, install the APK from Releases. It supports 64-bit ARM and x86-64 devices. Import and select a node, choose **Rules** or **Global**, and approve the VPN prompt the first time you connect.
+
+On iOS 15 or later, import and select a WireGuard node, connect in **Global** mode, and approve the VPN prompt. Install a signed build provisioned for your device or use TestFlight.
+
 ## Connect
 
 1. On **Home**, select **Import** to paste node links or a subscription URL, or to upload a configuration file. Use **Add** to enter a node manually.
-2. Select a node and choose a **Proxy mode**. **Rules** uses your routing configuration, **Global** sends traffic through the selected node, and **Direct** connects to destinations directly.
+2. Select a node and choose a **Proxy mode**. **Rules** uses your routing configuration. **Global** sends traffic through the selected node.
 3. Turn on **Connect**. For apps that use a local proxy, use the address and port shown in **Settings → Proxy**.
 
-Use **Latency test** to compare nodes. The lightning button in each node group toggles automatic selection for that group. When connecting, Lanboat tests the group containing the selected node and uses its fastest available node if auto select is on. Turning it on for the connected group runs a test immediately. **Global + TUN** routes system TCP and UDP traffic through Lanboat. Use a platform installer and approve the system prompt when prompted. On Linux, this mode also requires a TUN device, `ip`, and `pkexec`.
+Use **Latency test** to compare nodes. The automatic selection button in each node group toggles automatic selection for that group. When connecting, Lanboat tests the group containing the selected node and uses its fastest available node if auto select is on. Turning it on for the connected group runs a test immediately. On desktop, **Global + TUN** routes system TCP and UDP traffic through Lanboat. Use a platform installer and approve the system prompt when prompted. On Linux, this mode also requires a TUN device, `ip`, and `pkexec`.
 
 ## Routing, DNS, and logs
 

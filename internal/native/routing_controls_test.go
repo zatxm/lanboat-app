@@ -84,16 +84,11 @@ func TestNativeWindowRoutingControls(t *testing.T) {
 	if v.editorScroll.scrollPosition(-1) == 0 || v.scroll.scrollPosition(-1) != 0 {
 		t.Fatal("rules must scroll internally")
 	}
-	find("策略组").click()
-	pump()
-	if v.title.text != "策略组" {
-		t.Fatal("policy group page title")
+	for _, c := range v.controls {
+		if c.widget.text == "策略组" {
+			t.Fatal("routing control has a strategy-group shortcut")
+		}
 	}
-	if !hasClass(find("创建策略组").classes, "icon-only") {
-		t.Fatal("shared group creation is unavailable from the default configuration")
-	}
-	u.back()
-	pump()
 	var fileIndex int
 	for i, f := range u.state.Config.Files {
 		if f.Name == "visual.conf" {
@@ -102,19 +97,32 @@ func TestNativeWindowRoutingControls(t *testing.T) {
 	}
 	u.openRoutingFile(u.state.Config.Files[fileIndex])
 	pump()
+	search := v.inputs["routingSearch"]
+	search.edit("first.invalid")
+	if u.field("routingSearch").Text() != "" {
+		t.Fatal("typing applied the rule search before Enter")
+	}
+	search.dispatch("submit", "")
+	pump()
+	if u.field("routingSearch").Text() != "first.invalid" {
+		t.Fatal("Enter did not submit the rule search")
+	}
+	v.inputs["routingSearch"].edit("")
+	v.inputs["routingSearch"].dispatch("submit", "")
+	pump()
 	find("添加").click()
 	pump()
-	if v.title.text != "添加规则" || v.inputs["policy"] == nil || v.inputs["policy"].kind != "select" {
+	if u.popup == nil || u.popup.title != "添加规则" || v.inputs["policy"] == nil || v.inputs["policy"].kind != "select" {
 		t.Fatal("rule title or policy dropdown")
 	}
 	v.inputs["policy"].edit("direct")
 	v.inputs["route.value"].edit("second.invalid")
-	u.saveEditor()
+	find("确定").click()
 	waitJob(t, u)
 	pump()
 	f, _ := u.routingFile()
 	p, err := routing.Parse(f.Content)
-	if err != nil || len(p.Rules) != 2 || !strings.Contains(f.Content, "[Host]\nkeep.invalid=192.0.2.1") || u.editor != "" {
+	if err != nil || len(p.Rules) != 2 || !strings.Contains(f.Content, "[Host]\nkeep.invalid=192.0.2.1") || u.popup != nil {
 		t.Fatal("visual add", err)
 	}
 	find("停用").click()
@@ -126,6 +134,8 @@ func TestNativeWindowRoutingControls(t *testing.T) {
 	if len(p.Rules) != 1 || len(entries) != 2 || !entries[0].Disabled {
 		t.Fatal("disable was not stored")
 	}
+	u.back()
+	pump()
 	find("策略组").click()
 	pump()
 	find("创建策略组").click()
@@ -148,6 +158,8 @@ func TestNativeWindowRoutingControls(t *testing.T) {
 		t.Fatal("shared group not saved", groups)
 	}
 	u.back()
+	pump()
+	u.openRoutingFile(u.state.Config.Files[fileIndex])
 	pump()
 	final := v.inputs["routingFinal"]
 	if final.tooltip != "当流量没有匹配任何分流规则时，使用此策略。" {

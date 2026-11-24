@@ -81,7 +81,6 @@ type UI struct {
 	connectedProbe                     context.CancelFunc
 	connectedProbeID                   string
 	connectedDelay                     int64
-	nodePage                           int
 	updates                            chan update
 	done                               chan struct{}
 	notify                             func()
@@ -372,7 +371,7 @@ func (u *UI) editNode(node profile.Node) {
 		node.SetOption("network", "none")
 	}
 	if u.editor != "node" {
-		for _, key := range []string{"subURL", "subUDP", "subInsecure", "subFastOpen", "subMax", "subUA", "subPassword", "subFilter", "subKeepRules"} {
+		for _, key := range []string{"subURL", "subUDP", "subInsecure", "subFastOpen", "subMax", "subUA", "subUA.custom", "subPassword", "subFilter", "subKeepRules"} {
 			u.field(key).SetText("")
 		}
 		for _, key := range []string{"subUDP", "subInsecure", "subFastOpen"} {
@@ -430,6 +429,7 @@ func (u *UI) editSubscription(s profile.Subscription) {
 	if s.MaxNodes > 0 {
 		maximum = strconv.Itoa(s.MaxNodes)
 	}
+	u.field("subUA.custom").SetText("")
 	for key, value := range map[string]string{"subURL": s.URL, "subUDP": s.UDP, "subInsecure": s.Insecure, "subFastOpen": s.FastOpen, "subMax": maximum, "subUA": s.UserAgent, "subPassword": "", "subFilter": s.Filter, "subKeepRules": strconv.FormatBool(s.KeepRules)} {
 		if key == "subUDP" || key == "subInsecure" || key == "subFastOpen" {
 			value = strconv.FormatBool(value == "true")
@@ -442,9 +442,6 @@ func (u *UI) editSubscription(s profile.Subscription) {
 func (u *UI) saveEditor() {
 	var fn func() error
 	switch u.editor {
-	case "file-rule":
-		u.saveRoutingRule()
-		return
 	case "node":
 		if u.draft.Type == "subscribe" {
 			name, address := strings.TrimSpace(u.field("name").Text()), strings.TrimSpace(u.field("subURL").Text())
@@ -534,7 +531,8 @@ func (u *UI) saveEditor() {
 		if u.field("nodeImportMethod").Text() == "subscription" {
 			address := strings.TrimSpace(u.field("nodeImportURL").Text())
 			keepRules := u.field("nodeImportRules").Text() == "true"
-			fn = func() error { _, err := u.backend.ImportSubscription(address, keepRules); return err }
+			sub := profile.Subscription{URL: address, KeepRules: keepRules, UserAgent: u.field("nodeImportUA").Text()}
+			fn = func() error { _, err := u.backend.ImportSubscriptionOptions(sub); return err }
 			break
 		}
 		content := u.field("content").Text()

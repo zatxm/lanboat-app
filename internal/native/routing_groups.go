@@ -22,10 +22,20 @@ func (u *UI) editRoutingGroup(group *profile.PolicyGroup) {
 	}
 	for key, value := range map[string]string{
 		"id": id, "name": g.Name, "type": g.Type, "members": strings.Join(g.Members, "\n"), "selected": g.Selected,
-		"url": g.URL, "interval": strconv.Itoa(g.Interval), "tolerance": strconv.Itoa(g.Tolerance),
+		"interval": strconv.Itoa(g.Interval), "tolerance": strconv.Itoa(g.Tolerance),
 	} {
 		u.field("group." + key).SetText(value)
 	}
+	target := g.URL
+	if target == "" {
+		target = profile.TestURLs[0]
+	}
+	choice := target
+	if !slices.Contains(profile.TestURLs, target) {
+		choice = "custom"
+	}
+	u.field("group.test.choice").SetText(choice)
+	u.field("group.test.custom").SetText(target)
 	u.popup = &popup{kind: "routing-group", title: title}
 	u.notify()
 }
@@ -41,7 +51,7 @@ func (u *UI) saveRoutingGroup() {
 		ID: u.field("group.id").Text(),
 		Group: routing.Group{
 			Name: strings.TrimSpace(u.field("group.name").Text()), Type: u.field("group.type").Text(),
-			URL: u.field("group.url").Text(), Interval: 600,
+			Interval: 600,
 		},
 	}
 	if g.Type == "select" {
@@ -52,6 +62,17 @@ func (u *UI) saveRoutingGroup() {
 		g.Interval, intervalErr = strconv.Atoi(u.field("group.interval").Text())
 		g.Tolerance, toleranceErr = strconv.Atoi(u.field("group.tolerance").Text())
 		g.Members = groupMembers(u.field("group.members").Text())
+		g.URL = u.connectivityTarget("group.test")
+		if len(g.Members) == 0 || len(g.Members) > 200 {
+			u.err = "请选择1–200个测速节点"
+			u.notify()
+			return
+		}
+		if g.URL == "" {
+			u.err = "请填写URL"
+			u.notify()
+			return
+		}
 		if intervalErr != nil || toleranceErr != nil {
 			u.err = "策略组参数无效"
 			u.notify()
@@ -76,14 +97,14 @@ func (v *nativeView) routingGroupFields(box *widget) {
 		types = append(types, option{"fallback", "故障转移"})
 	}
 	name := v.input("group.name", "", false, false, false)
-	name.pointer.Width(320)
+	name.setExpand(true)
 	mode := v.selectWidget(kind, types, false, func(value string) {
 		u.field("group.type").SetText(value)
 		p := *u.popup
 		u.popup = &p
 		u.notify()
 	})
-	mode.pointer.Width(320)
+	mode.setExpand(true)
 	v.inputs["group.type"] = mode
 	v.pack(box, v.compactFormRow("名称", name), v.compactFormRow("类型", mode))
 
@@ -94,24 +115,14 @@ func (v *nativeView) routingGroupFields(box *widget) {
 			options = append(options, option{current, u.policyLabel(current)})
 		}
 		choice := v.selectWidget(current, options, false, func(value string) { u.field("group.selected").SetText(value) })
-		choice.pointer.Width(320)
+		choice.setExpand(true)
 		v.inputs["group.selected"] = choice
 		v.pack(box, v.compactFormRow("默认策略", choice))
 	} else {
-		edit := v.button("选择测速节点", "link icon-only icon-edit", false, false, func() {
-			u.popup = &popup{kind: "group-test-members", title: "测速节点", previous: u.popup}
-			u.notify()
-		})
-		count := fmt.Sprintf(v.translate("%d项"), len(groupMembers(u.field("group.members").Text())))
-		url := v.dataLabel(u.field("group.url").Text(), "node-name applied-url")
-		url.pointer.Width(320).Clip()
-		url.setTooltip(u.field("group.url").Text())
-		v.pack(box,
-			v.compactFormRow("测速节点", v.dataLabel(count, "node-name"), edit),
-			v.compactFormRow("测速URL", url, v.button("修改", "link icon-only icon-edit", false, false, u.editGroupTestURL)))
+		v.pack(box, v.groupTestMembers(), v.urlFields("group.test", profile.TestURLs, 0))
 		numeric := func(key, title, unit string) *widget {
 			input := v.input(key, "", false, false, false)
-			input.pointer.Width(128)
+			input.setExpand(true)
 			return v.compactFormRow(title, input, v.label(unit, "help"))
 		}
 		v.pack(box, numeric("group.interval", "测速间隔", "秒"), numeric("group.tolerance", "切换公差", "毫秒"))
@@ -119,7 +130,7 @@ func (v *nativeView) routingGroupFields(box *widget) {
 	v.dialogActions(box, u.saveRoutingGroup)
 }
 
-func (v *nativeView) groupTestMembers(box *widget) {
+func (v *nativeView) groupTestMembers() *widget {
 	u := v.ui
 	options := u.groupPolicyOptions()
 	selected := groupMembers(u.field("group.members").Text())
@@ -128,39 +139,27 @@ func (v *nativeView) groupTestMembers(box *widget) {
 			options = append(options, option{current, u.policyLabel(current)})
 		}
 	}
-	checked := make(map[string]bool, len(selected))
-	for _, policy := range selected {
-		checked[policy] = true
-	}
 	list := ui.VirtualList(ui.VirtualListOptions{Count: len(options), Name: func(i int) string { return options[i].label }}, func(i int) *ui.Element {
 		opt := options[i]
 		label := opt.label
 		if opt.value == "direct" || opt.value == "proxy" {
 			label = v.translate(label)
 		}
-		return ui.Checkbox(label, checked[opt.value]).Padding(0, 8).OnToggle(func(enabled bool) {
-			checked[opt.value] = enabled
+		return ui.Checkbox(label, slices.Contains(selected, opt.value)).Padding(0, 8).OnToggle(func(enabled bool) {
 			if enabled {
 				selected = append(selected, opt.value)
 			} else {
 				selected = slices.DeleteFunc(selected, func(policy string) bool { return policy == opt.value })
 			}
+			u.field("group.members").SetText(strings.Join(selected, "\n"))
 		})
-	}).Height(240)
-	holder := v.box("", false, 0, false)
+	}).Height(float32(min(5, len(options)) * 31))
+	holder := v.box("option-group", false, 0, true)
 	holder.pointer.Append(list)
-	v.pack(box, holder)
-	v.dialogActions(box, func() {
-		if len(selected) == 0 || len(selected) > 200 {
-			u.err = "请选择1–200个测速节点"
-			u.notify()
-			return
-		}
-		u.field("group.members").SetText(strings.Join(selected, "\n"))
-		u.closePopup()
-	})
+	row := v.compactFormRow("测速节点", holder)
+	row.pointer.AlignItems(ui.Start)
+	return row
 }
-
 func (v *nativeView) routingGroupsPage() {
 	u := v.ui
 	groups := u.state.Config.PolicyGroups

@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"time"
 
@@ -33,7 +34,8 @@ type Status struct {
 
 type Engine struct {
 	mu      sync.Mutex
-	runtime *coreipc.Client
+	runtime coreipc.Session
+	mobile  coreipc.Launcher
 	cancel  context.CancelFunc
 
 	traffic                    *traffic.Store
@@ -57,9 +59,10 @@ func New(path, dir string, log *zap.Logger) *Engine {
 	}
 	return &Engine{path: path, dir: dir, log: log}
 }
-func FindCore() string                         { exe, _ := os.Executable(); return exe }
-func (e *Engine) CorePath() string             { return e.path }
-func (e *Engine) Start(c profile.Config) error { return e.StartContext(context.Background(), c) }
+func FindCore() string                                      { exe, _ := os.Executable(); return exe }
+func (e *Engine) CorePath() string                          { return e.path }
+func (e *Engine) Start(c profile.Config) error              { return e.StartContext(context.Background(), c) }
+func (e *Engine) SetMobileLauncher(launch coreipc.Launcher) { e.mobile = launch }
 func (e *Engine) StartContext(ctx context.Context, c profile.Config) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -79,8 +82,14 @@ func (e *Engine) StartContext(ctx context.Context, c profile.Config) error {
 		}
 	}()
 	node := selectedNode(c)
+	mobile := e.mobile != nil
+	ios := mobile && runtime.GOOS == "ios"
+	useTunnel := mobile || c.Settings.Mode == "tun"
 	if c.Settings.Mode != "direct" && node.ID == "" {
 		return errors.New("请先选择一个节点")
+	}
+	if ios && (node.Kind() != "wireguard" || c.Settings.Mode != "global" || c.Settings.Proxy.Upstream.Enabled) {
+		return errors.New("iOS 需要选择 WireGuard 节点，并关闭前置代理")
 	}
 	if c.Settings.Mode == "rule" {
 		var parsed routing.Parsed
@@ -109,12 +118,16 @@ func (e *Engine) StartContext(ctx context.Context, c profile.Config) error {
 			useFront = useFront || c.Settings.Mode == "rule" && rule.Type == "USER-AGENT"
 		}
 	}
+	useFront = useFront && !mobile
 	// Reserve the public port before allocating private listeners.
-	reservation, portErr := net.Listen("tcp", net.JoinHostPort(c.Settings.Proxy.ListenHost(), fmt.Sprint(publicPort)))
-	if portErr != nil {
-		return fmt.Errorf("本地代理端口不可用：%w", portErr)
+	var reservations []net.Listener
+	if !mobile {
+		reservation, portErr := net.Listen("tcp", net.JoinHostPort(c.Settings.Proxy.ListenHost(), fmt.Sprint(publicPort)))
+		if portErr != nil {
+			return fmt.Errorf("本地代理端口不可用：%w", portErr)
+		}
+		reservations = append(reservations, reservation)
 	}
-	var reservations = []net.Listener{reservation}
 	releaseReservations := func() {
 		for _, l := range reservations {
 			l.Close()
@@ -159,7 +172,7 @@ func (e *Engine) StartContext(ctx context.Context, c profile.Config) error {
 	if controlErr != nil {
 		return controlErr
 	}
-	config := BuildConfig(c, net.JoinHostPort("127.0.0.1", fmt.Sprint(controlPort)), e.secret)
+	config := buildConfig(c, net.JoinHostPort("127.0.0.1", fmt.Sprint(controlPort)), e.secret, useTunnel)
 	if c.Settings.DNS != nil && (c.Settings.DNS.Persist || c.Settings.DNS.FakeIP) {
 		config["experimental"].(map[string]any)["cache_file"] = map[string]any{"enabled": true, "path": filepath.Join(e.dir, "dns-cache"), "cache_id": "lanboat", "store_dns": c.Settings.DNS.Persist, "store_fakeip": c.Settings.DNS.FakeIP}
 	}
@@ -172,14 +185,36 @@ func (e *Engine) StartContext(ctx context.Context, c profile.Config) error {
 	if err := e.preparePolicies(ctx, c, config); err != nil {
 		return err
 	}
-	if c.Settings.Mode == "tun" {
-		config["inbounds"] = append(config["inbounds"].([]any), tunmode.Inbound(c.Settings.UDP.Seconds()))
+	if useTunnel {
+		in := tunmode.Inbound(c.Settings.UDP.Seconds())
+		inbounds := config["inbounds"].([]any)
 		route := config["route"].(map[string]any)
-		route["rules"] = append([]any{map[string]any{"inbound": []string{"tun-in"}, "port": []int{53}, "action": "hijack-dns"}}, route["rules"].([]any)...)
-		route["auto_detect_interface"] = true
+		if mobile {
+			in["auto_route"], in["strict_route"], in["dns_mode"] = false, false, "disabled"
+			inbounds = nil
+			if ios {
+				experimental := config["experimental"].(map[string]any)
+				delete(experimental, "clash_api")
+				delete(experimental, "cache_file")
+				route["rules"] = []any{}
+			} else {
+				in["dns_mode"] = "hijack"
+			}
+		}
+		config["inbounds"] = append(inbounds, in)
+		if !ios {
+			route["rules"] = append([]any{map[string]any{"inbound": []string{"tun-in"}, "port": []int{53}, "action": "hijack-dns"}}, route["rules"].([]any)...)
+		}
+		if !mobile {
+			route["auto_detect_interface"] = true
+		}
 	}
 
-	ports, release, err := configureDNSChecks(config)
+	var ports []int
+	release := func() {}
+	if !mobile {
+		ports, release, err = configureDNSChecks(config)
+	}
 	if err != nil {
 		return err
 	}
@@ -193,10 +228,6 @@ func (e *Engine) StartContext(ctx context.Context, c profile.Config) error {
 	e.cancel = cancel
 	stopStartup := context.AfterFunc(ctx, cancel)
 	defer stopStartup()
-	program, err := coreipc.Executable(e.path)
-	if err != nil {
-		return err
-	}
 	var record func(traffic.Entry)
 	if e.traffic != nil {
 		e.trafficQueue = newTrafficQueue(e.traffic, e.log)
@@ -206,14 +237,22 @@ func (e *Engine) StartContext(ctx context.Context, c profile.Config) error {
 	releaseReservations()
 	startup, cancelStartup := context.WithTimeout(runCtx, 100*time.Second)
 	defer cancelStartup()
-	runtime, err := coreipc.Launch(startup, program, coreipc.Request{
-		Op: "start", Config: raw, TUN: c.Settings.Mode == "tun", Logging: e.logging(c.Settings.ProxyLog),
-	}, record)
+	request := coreipc.Request{Op: "start", Config: raw, TUN: useTunnel, Logging: e.logging(c.Settings.ProxyLog)}
+	var session coreipc.Session
+	if mobile {
+		session, err = e.mobile(startup, request, record)
+	} else {
+		program, findErr := coreipc.Executable(e.path)
+		if findErr != nil {
+			return findErr
+		}
+		session, err = coreipc.Launch(startup, program, request, record)
+	}
 	if err != nil {
 		return err
 	}
-	e.runtime = runtime
-	e.control = runtime.ControllerAddress()
+	e.runtime = session
+	e.control = session.ControllerAddress()
 	e.done = make(chan struct{})
 	for _, group := range e.fallbackGroups {
 		go monitorFallback(e.control, e.secret, e.done, group)

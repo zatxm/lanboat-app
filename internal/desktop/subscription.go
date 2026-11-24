@@ -1,9 +1,37 @@
 package desktop
 
 import (
+	"context"
+	"crypto/tls"
 	"errors"
+	"io"
+	"net"
+
 	"github.com/zatxm/lanboat-app/internal/profile"
 )
+
+var errSubscriptionRedirect = errors.New("订阅重定向无效（最多 5 次，HTTPS 不能降级）")
+
+func subscriptionDownloadError(err error) error {
+	// net/http errors include the full subscription URL, which can contain credentials.
+	switch {
+	case errors.Is(err, errSubscriptionRedirect):
+		return errSubscriptionRedirect
+	case errors.Is(err, context.DeadlineExceeded):
+		return errors.New("下载订阅超时，请检查网络后重试")
+	case errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF):
+		return errors.New("订阅服务器提前断开了连接，请重试")
+	}
+	var dns *net.DNSError
+	if errors.As(err, &dns) {
+		return errors.New("无法解析订阅服务器域名，请检查 DNS 设置")
+	}
+	var cert *tls.CertificateVerificationError
+	if errors.As(err, &cert) {
+		return errors.New("订阅服务器的 TLS 证书验证失败")
+	}
+	return errors.New("下载订阅失败，请检查网络和订阅地址")
+}
 
 func syncSubscriptionRules(c *profile.Config, sub profile.Subscription, content string, nodes []profile.Node) error {
 	if content != "" {

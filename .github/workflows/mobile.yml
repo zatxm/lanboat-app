@@ -1,0 +1,201 @@
+name: Build mobile apps
+
+on:
+  pull_request:
+    paths:
+      - 'cmd/**'
+      - 'internal/**'
+      - 'mobile/**'
+      - 'packaging/**'
+      - 'scripts/build-mobile.sh'
+      - 'scripts/test-android.py'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/mobile.yml'
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+env:
+  GOWORK: 'off'
+  MOBILE_VERSION: ${{ inputs.tag || github.event.release.tag_name || 'v1.0.0' }}
+  LANBOAT_BUILD_NUMBER: ${{ github.run_number }}
+
+jobs:
+  tests:
+    name: Go tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - run: CGO_ENABLED=0 go test -mod=readonly -p 1 ./...
+
+  android:
+    needs: tests
+    runs-on: ubuntu-24.04
+    env:
+      RELEASE_APK_KEY: ${{ secrets.LANBOAT_ANDROID_KEYSTORE_BASE64 }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install Android SDK and emulator
+        run: |
+          set -euo pipefail
+          { yes || true; } | sdkmanager --licenses >/dev/null
+          sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;28.2.13676358' \
+            'platform-tools' 'emulator' 'system-images;android-36;google_apis;x86_64'
+          printf 'KERNEL=="kvm", MODE="0666"\n' | sudo tee /etc/udev/rules.d/99-lanboat-kvm.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Build APK and test it on an emulator
+        run: |
+          set -euo pipefail
+          export LANBOAT_VERSION="${MOBILE_VERSION#v}"
+          bash scripts/build-mobile.sh android dist/Lanboat-android-debug.apk
+          echo no | avdmanager create avd --force --name lanboat-ci --package 'system-images;android-36;google_apis;x86_64'
+          adb start-server
+          "$ANDROID_HOME/emulator/emulator" -avd lanboat-ci -no-window -no-snapshot -no-audio \
+            -no-boot-anim -gpu swiftshader > "$RUNNER_TEMP/lanboat-emulator.log" 2>&1 &
+          trap 'adb emu kill || true' EXIT
+          timeout 260 adb wait-for-device
+          timeout 190 bash -c 'until [[ $(adb shell getprop sys.boot_completed | tr -d "\r") == 1 ]]; do sleep 2; done'
+          python3 scripts/test-android.py dist/Lanboat-android-debug.apk dist/Lanboat-Android-Emulator.png
+      - name: Build signed Android release
+        if: (github.event_name == 'release' || inputs.tag != '') && env.RELEASE_APK_KEY != ''
+        env:
+          ANDROID_KEY_ALIAS: ${{ secrets.LANBOAT_ANDROID_KEY_ALIAS }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.LANBOAT_ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.LANBOAT_ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          export LANBOAT_VERSION="${MOBILE_VERSION#v}"
+          export ANDROID_KEYSTORE="$RUNNER_TEMP/lanboat-android.keystore"
+          trap 'rm -f "$ANDROID_KEYSTORE"' EXIT
+          umask 077
+          printf '%s' "$RELEASE_APK_KEY" | base64 --decode > "$ANDROID_KEYSTORE"
+          bash scripts/build-mobile.sh android "dist/Lanboat-$LANBOAT_VERSION-Android.apk"
+      - uses: actions/upload-artifact@v6
+        with:
+          name: lanboat-android
+          path: |
+            dist/*-Android.apk
+            dist/Lanboat-android-debug.apk
+            dist/Lanboat-Android-Emulator.png
+          if-no-files-found: error
+
+  ios:
+    needs: tests
+    runs-on: macos-15
+    env:
+      RELEASE_IOS_CERT: ${{ secrets.LANBOAT_IOS_P12_BASE64 }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Build iOS app and start it on an iPhone simulator
+        run: |
+          set -euo pipefail
+          export LANBOAT_VERSION="${MOBILE_VERSION#v}"
+          APPLE_SDK=iphonesimulator bash scripts/build-mobile.sh ios dist/Lanboat-iOS-Simulator.ipa
+          unzip -q dist/Lanboat-iOS-Simulator.ipa -d "$RUNNER_TEMP/lanboat-simulator"
+          device=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          devices = json.load(sys.stdin)["devices"]
+          print(next(d["udid"] for runtime in sorted(devices, reverse=True) if "iOS" in runtime for d in devices[runtime] if d["isAvailable"] and d["name"].startswith("iPhone")))
+          ')
+          xcrun simctl boot "$device"
+          trap 'xcrun simctl shutdown "$device" || true' EXIT
+          xcrun simctl bootstatus "$device" -b
+          xcrun simctl install "$device" "$RUNNER_TEMP/lanboat-simulator/Payload/Lanboat.app"
+          xcrun simctl launch "$device" org.lanboat.mobile
+          data=$(xcrun simctl get_app_container "$device" org.lanboat.mobile data)
+          for _ in {1..20}; do
+            if test -s "$data/Library/Application Support/lanboat/config.json"; then break; fi
+            sleep 1
+          done
+          test -s "$data/Library/Application Support/lanboat/config.json"
+          xcrun simctl io "$device" screenshot dist/iPhone-Simulator.png
+      - name: Build signed iPhone release
+        if: (github.event_name == 'release' || inputs.tag != '') && env.RELEASE_IOS_CERT != ''
+        env:
+          IOS_CERT_PASSWORD: ${{ secrets.LANBOAT_IOS_P12_PASSWORD }}
+          IOS_APP_PROFILE_BASE64: ${{ secrets.LANBOAT_IOS_APP_PROFILE_BASE64 }}
+          IOS_TUNNEL_PROFILE_BASE64: ${{ secrets.LANBOAT_IOS_TUNNEL_PROFILE_BASE64 }}
+          LANBOAT_MOBILE_ID: ${{ vars.LANBOAT_IOS_BUNDLE_ID || 'org.lanboat.mobile' }}
+        run: |
+          set -euo pipefail
+          export LANBOAT_VERSION="${MOBILE_VERSION#v}"
+          export IOS_APP_PROFILE="$RUNNER_TEMP/lanboat-app.mobileprovision"
+          export IOS_TUNNEL_PROFILE="$RUNNER_TEMP/lanboat-tunnel.mobileprovision"
+          cert="$RUNNER_TEMP/lanboat.p12"
+          keychain="$RUNNER_TEMP/lanboat-signing.keychain-db"
+          trap 'security delete-keychain "$keychain" || true; rm -f "$cert" "$IOS_APP_PROFILE" "$IOS_TUNNEL_PROFILE"' EXIT
+          umask 077
+          printf '%s' "$RELEASE_IOS_CERT" | base64 -D > "$cert"
+          printf '%s' "$IOS_APP_PROFILE_BASE64" | base64 -D > "$IOS_APP_PROFILE"
+          printf '%s' "$IOS_TUNNEL_PROFILE_BASE64" | base64 -D > "$IOS_TUNNEL_PROFILE"
+          password=$(openssl rand -hex 20)
+          security create-keychain -p "$password" "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          security list-keychains -d user -s "$keychain"
+          security import "$cert" -P "$IOS_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$keychain"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$password" "$keychain"
+          IOS_IDENTITY=$(security find-identity -p codesigning -v "$keychain" | awk '$1 == "1)" { print $2; exit }')
+          export IOS_IDENTITY
+          APPLE_SDK=iphoneos bash scripts/build-mobile.sh ios "dist/Lanboat-$LANBOAT_VERSION-iOS.ipa"
+      - uses: actions/upload-artifact@v6
+        with:
+          name: lanboat-ios
+          path: |
+            dist/*.ipa
+            dist/iPhone-Simulator.png
+          if-no-files-found: error
+
+  publish:
+    if: github.event_name == 'release' || inputs.tag != ''
+    needs: [android, ios]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: lanboat-*
+          merge-multiple: true
+          path: dist
+      - name: Attach signed mobile packages to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version="${MOBILE_VERSION#v}"
+          for package in "dist/Lanboat-$version-Android.apk" "dist/Lanboat-$version-iOS.ipa"; do
+            if [[ -s $package ]]; then
+              gh release upload "$MOBILE_VERSION" "$package" --repo "$GITHUB_REPOSITORY" --clobber
+            else
+              echo "::notice::Signing credentials were unavailable for $package. See CI artifacts for test packages."
+            fi
+          done

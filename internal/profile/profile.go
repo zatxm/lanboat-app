@@ -407,6 +407,9 @@ func Load(path string) (Config, error) {
 	return c, err
 }
 func (c *Config) ValidateSnapshot() error {
+	if c.Settings.Mode == "direct" {
+		c.Settings.Mode = "rule"
+	}
 	if c.Version != 1 {
 		return errors.New("配置版本不受支持")
 	}

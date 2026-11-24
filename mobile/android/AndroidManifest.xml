@@ -1,0 +1,19 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="org.lanboat.mobile" android:versionCode="1" android:versionName="1.0">
+    <uses-sdk android:minSdkVersion="23" android:targetSdkVersion="36"/>
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SYSTEM_EXEMPTED"/>
+    <application android:enableOnBackInvokedCallback="false" android:label="Lanboat" android:allowBackup="false"
+        android:extractNativeLibs="false" android:theme="@android:style/Theme.Material.Light.NoActionBar">
+        <activity android:name="org.fego.FegoActivity" android:exported="true"
+            android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|density"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+        </activity>
+        <service android:name=".LanboatVpnService" android:exported="true" android:permission="android.permission.BIND_VPN_SERVICE"
+            android:foregroundServiceType="systemExempted">
+            <intent-filter><action android:name="android.net.VpnService"/></intent-filter>
+            <meta-data android:name="android.net.VpnService.SUPPORTS_ALWAYS_ON" android:value="false"/>
+        </service>
+    </application>
+</manifest>

@@ -5,7 +5,13 @@ import (
 )
 
 func iconName(text string) string {
-	for _, r := range []struct{ match, name string }{{"代理泄漏检测", "shield"}, {"路由", "route"}, {"返回", "back"}, {"取消", "close"}, {"删除", "delete"}, {"清空", "delete"}, {"导入", "import"}, {"载入", "import"}, {"导出", "export"}, {"下载", "download"}, {"上传", "upload"}, {"分享", "share"}, {"恢复", "refresh"}, {"更新", "refresh"}, {"刷新", "refresh"}, {"保存", "save"}, {"完成", "check"}, {"使用", "check"}, {"添加", "add"}, {"下移", "down"}, {"上移", "up"}, {"上一页", "back"}, {"下一页", "forward"}, {"TCP", "tcp"}, {"UDP", "udp"}, {"主题", "moon"}, {"日志", "logs"}, {"DNS设置", "server"}, {"DNS", "dns"}, {"代理", "layers"}, {"订阅", "link"}, {"配置", "folder"}, {"模块", "layers"}, {"测试", "test"}, {"诊断", "info"}, {"详情", "info"}, {"查看", "info"}, {"关于", "info"}, {"备份", "folder"}, {"重命名", "edit"}, {"编辑", "edit"}, {"节点", "server"}} {
+	for _, r := range []struct{ match, name string }{
+		{"代理泄漏检测", "shield"}, {"路由", "route"}, {"代理", "layers"},
+		{"TCP", "tcp"}, {"UDP", "udp"}, {"DNS设置", "server"},
+		{"测试", "test"}, {"关于", "info"}, {"备份", "folder"},
+		{"返回", "back"}, {"取消", "close"}, {"载入", "import"}, {"添加", "add"},
+		{"删除", "delete"}, {"编辑", "edit"}, {"更新", "refresh"}, {"分享", "share"},
+	} {
 		if strings.Contains(text, r.match) {
 			return r.name
 		}

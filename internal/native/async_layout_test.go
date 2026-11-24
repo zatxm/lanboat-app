@@ -77,34 +77,26 @@ func TestNativeWindowAsyncAndPagination(t *testing.T) {
 	pumpUI()
 	// Choosing a URL preset/custom value edits the group draft, not global settings.
 	globalURL := u.state.Config.Settings.TestTarget()
-	find("修改").click()
-	pumpUI()
-	if u.popup == nil || u.popup.kind != "group-test-settings" {
-		t.Fatal("group URL editor")
+	custom := v.inputs["group.test.custom"]
+	if custom == nil || custom.parent.visible || u.popup == nil || u.popup.kind != "routing-group" {
+		t.Fatal("group URL selector or initial custom field visibility")
 	}
 	v.inputs["group.test.choice"].edit("custom")
 	pumpUI()
-	v.inputs["group.test.custom"].edit("https://example.com/latency")
-	u.closePopup()
-	pumpUI()
-	if u.field("group.url").Text() != profile.TestURLs[0] {
-		t.Fatal("cancel applied URL")
+	if !custom.parent.visible || u.popup.kind != "routing-group" {
+		t.Fatal("custom URL did not open inline")
 	}
-	find("修改").click()
-	pumpUI()
-	v.inputs["group.test.choice"].edit("custom")
-	pumpUI()
-	v.inputs["group.test.custom"].edit("https://example.com/latency")
-	// The dialog uses OK and the page header uses Save.
-	for _, c := range v.controls {
-		if c.widget.text == "确定" && c.widget != v.save {
-			c.widget.click()
-			break
+	if got, want := custom.pointer.Bounds(), v.inputs["group.test.choice"].pointer.Bounds(); got.X != want.X || got.W != want.W {
+		t.Fatalf("custom URL should align below the selector: %v, %v", got, want)
+	}
+	for _, w := range v.widgets {
+		if w.text == "自定义URL" || w.text == "测速节点" && w.kind == "button" {
+			t.Fatalf("unexpected group field decoration: %s", w.text)
 		}
 	}
-	pumpUI()
-	if u.popup == nil || u.popup.kind != "routing-group" || u.field("group.url").Text() != "https://example.com/latency" || u.state.Config.Settings.TestTarget() != globalURL {
-		t.Fatal("group URL save changed global settings")
+	custom.edit("https://example.com/latency")
+	if u.popup.kind != "routing-group" || u.state.Config.Settings.TestTarget() != globalURL {
+		t.Fatal("changing group settings opened a nested dialog or changed global settings")
 	}
 	find("确定").click()
 	waitJob(t, u)
@@ -113,6 +105,12 @@ func TestNativeWindowAsyncAndPagination(t *testing.T) {
 	if len(groups) != 3 || groups[2].URL != "https://example.com/latency" || u.popup != nil {
 		t.Fatal("group URL not persisted", groups)
 	}
+	find("删除").click()
+	pumpUI()
+	if u.popup == nil || u.popup.kind != "confirm" || u.popup.title != "策略组" {
+		t.Fatal("group delete dialog has the wrong title")
+	}
+	u.closePopup()
 	u.navigate("data")
 	pumpUI()
 	u.openNetworkLogs()
@@ -124,9 +122,6 @@ func TestNativeWindowAsyncAndPagination(t *testing.T) {
 
 	u.navigate("home")
 	pumpUI()
-	if v.pagination.visible {
-		t.Fatal("empty home pager remains visible")
-	}
 	u.openPage("rules")
 	pumpUI()
 	for _, c := range v.controls {

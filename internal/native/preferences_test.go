@@ -1,6 +1,7 @@
 package native
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -8,6 +9,43 @@ import (
 
 	"github.com/zatxm/lanboat-app/internal/profile"
 )
+
+func TestThemeSelectorUsesSunAndCrescent(t *testing.T) {
+	u := testUI(t)
+	u.navigate("settings")
+	v, err := newView(u)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer v.dispose()
+	v.render()
+	v.tester.Step()
+
+	var theme, icon *widget
+	for _, w := range v.widgets {
+		if w.kind == "select" && slices.Equal(w.options, []option{{"light", "浅色"}, {"dark", "深色"}}) {
+			theme = w
+		}
+		if w.kind == "icon" && w.icon == "sun" {
+			icon = w
+		}
+	}
+	if theme == nil || icon == nil || theme.parent != icon.parent || theme.value != "light" {
+		t.Fatal("missing theme choices or light-theme sun icon")
+	}
+	for _, target := range []struct{ theme, key, icon string }{{"dark", "ArrowDown", "moon"}, {"light", "ArrowUp", "sun"}} {
+		bounds := theme.pointer.Bounds()
+		v.tester.Click(bounds.X+bounds.W/2, bounds.Y+bounds.H/2)
+		v.tester.Key(target.key, false, false)
+		v.tester.Key("Enter", false, false)
+		waitJob(t, u)
+		v.refresh()
+		v.tester.Step()
+		if v.theme != target.theme || u.backend.GetState().Config.Settings.Appearance != target.theme || icon.icon != target.icon {
+			t.Fatalf("choosing %q did not update the theme or its icon", target.theme)
+		}
+	}
+}
 
 func TestNativeWindowPreferences(t *testing.T) {
 	t.Setenv("TZ", "Asia/Shanghai")
@@ -49,7 +87,7 @@ func TestNativeWindowPreferences(t *testing.T) {
 	if v.next != next || list != v.nodeContainer || search != v.inputs["search"] || delay != v.delayLabels[id] {
 		t.Fatal("language rebuilt home")
 	}
-	if v.nav["settings"].nativeText() != "Settings" || delay.nativeText() != "188 ms" {
+	if v.nav["settings"].displayText() != "Settings" || delay.nativeText() != "188 ms" {
 		t.Fatal("language or latency not refreshed")
 	}
 	found := false
@@ -111,7 +149,7 @@ func TestNativeWindowPreferences(t *testing.T) {
 	next = v.next
 	u.changeSettings(func(s *profile.Settings) { s.Language = "zh"; s.Appearance = "dark"; s.UpdateOnStart = true })
 	wait()
-	if v.next != next || v.inputs["proxy.port"] != input || input.nativeText() != "1088" || v.theme != "dark" || !input.hasFocus() || v.scroll.scrollPosition(-1) != scrollOffset || v.nav["settings"].nativeText() != "设置" {
+	if v.next != next || v.inputs["proxy.port"] != input || input.nativeText() != "1088" || v.theme != "dark" || !input.hasFocus() || v.scroll.scrollPosition(-1) != scrollOffset || v.nav["settings"].displayText() != "设置" {
 		t.Fatal("settings refresh lost controls or unsaved input")
 	}
 	u.saveProxySection("port")

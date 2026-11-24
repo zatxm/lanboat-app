@@ -42,10 +42,12 @@ func TestHomeNodeExportAndCopy(t *testing.T) {
 		t.Fatal("adding the first node did not enable export in place")
 	}
 	v.inputs["search"].edit("not found")
+	v.inputs["search"].dispatch("submit", "")
 	if !export.enabled {
 		t.Fatal("an empty search must leave export enabled")
 	}
 	v.inputs["search"].edit("")
+	v.inputs["search"].dispatch("submit", "")
 
 	selected := u.state.Config.Selected
 	for _, name := range []string{"Local-1", "Local-2"} {
@@ -133,6 +135,7 @@ func TestHomeDeleteAllLocalNodes(t *testing.T) {
 		return nil
 	}
 	v.inputs["search"].edit("Shown")
+	v.inputs["search"].dispatch("submit", "")
 	pump()
 	deleteAll := find("删除所有本地节点")
 	detect := find("延迟检测")
@@ -167,6 +170,7 @@ func TestHomeDeleteAllLocalNodes(t *testing.T) {
 		t.Fatal("bulk deletion did not preserve the subscription rule overlay")
 	}
 	v.inputs["search"].edit("")
+	v.inputs["search"].dispatch("submit", "")
 	pump()
 	if find("删除所有本地节点") != nil || find("删除订阅") == nil {
 		t.Fatal("only subscription actions should remain")
@@ -237,7 +241,7 @@ func TestNativeWindow(t *testing.T) {
 	}
 	for _, w := range v.nav {
 		x, _, width, _ := w.bounds()
-		if x >= 200 || width < 150 {
+		if x >= 64 || width != 44 || w.buttonCaption != nil {
 			t.Fatal("navigation not in left sidebar")
 		}
 	}
@@ -327,6 +331,7 @@ func TestNativeWindow(t *testing.T) {
 		t.Fatal("save did not return home")
 	}
 	v.inputs["search"].edit("HTTP3")
+	v.inputs["search"].dispatch("submit", "")
 	pump()
 	preferred := u.state.Config.Selected
 	clickNodeDetail()

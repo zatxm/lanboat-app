@@ -41,8 +41,26 @@ type Response struct {
 	Stats      *Stats         `json:",omitempty"`
 }
 
+type Session interface {
+	PID() int
+	ControllerAddress() string
+	Done() <-chan struct{}
+	Err() error
+	Call(context.Context, Request) (Response, error)
+	Close()
+}
+
+type Launcher func(context.Context, Request, func(traffic.Entry)) (Session, error)
+type Backend func(context.Context, io.Reader, io.Writer) error
+
+// SetEmbeddedBackend is called during mobile startup, before using the engine.
+func SetEmbeddedBackend(backend Backend) { embedded = backend }
+
+var embedded Backend
+
 type Client struct {
-	cmd        *exec.Cmd
+	pid        int
+	abort      func()
 	input      io.WriteCloser
 	readerDone chan struct{}
 	done       chan struct{}
@@ -56,6 +74,9 @@ type Client struct {
 }
 
 func Executable(app string) (string, error) {
+	if embedded != nil {
+		return "lanboat-embedded", nil
+	}
 	if os.Getenv("LANBOAT_CORE_TEST") == "1" {
 		if path := os.Getenv("LANBOAT_CORE_TEST_BINARY"); path != "" {
 			return path, nil
@@ -84,6 +105,9 @@ func Executable(app string) (string, error) {
 }
 
 func Launch(ctx context.Context, path string, request Request, trafficLog func(traffic.Entry)) (*Client, error) {
+	if embedded != nil {
+		return LaunchEmbedded(ctx, request, trafficLog, embedded)
+	}
 	cmd := exec.Command(path, "--lanboat-core")
 	hideWindow(cmd)
 	cmd.Stderr = os.Stderr
@@ -101,7 +125,31 @@ func Launch(ctx context.Context, path string, request Request, trafficLog func(t
 		output.Close()
 		return nil, err
 	}
-	c := &Client{cmd: cmd, input: input, readerDone: make(chan struct{}), done: make(chan struct{}), marshal: json.NewEncoder(input)}
+	return connect(ctx, request, trafficLog, input, output, cmd.Process.Pid, cmd.Wait, func() { _ = cmd.Process.Kill() })
+}
+
+func LaunchEmbedded(ctx context.Context, request Request, trafficLog func(traffic.Entry), backend Backend) (*Client, error) {
+	fromApp, toCore := io.Pipe()
+	fromCore, toApp := io.Pipe()
+	run, cancel := context.WithCancel(context.Background())
+	stopped := make(chan error, 1)
+	go func() {
+		err := backend(run, fromApp, toApp)
+		cancel()
+		fromApp.Close()
+		toApp.Close()
+		stopped <- err
+	}()
+	abort := func() {
+		cancel()
+		fromApp.Close()
+		fromCore.Close()
+	}
+	return connect(ctx, request, trafficLog, toCore, fromCore, os.Getpid(), func() error { return <-stopped }, abort)
+}
+
+func connect(ctx context.Context, request Request, trafficLog func(traffic.Entry), input io.WriteCloser, output io.Reader, pid int, wait func() error, abort func()) (*Client, error) {
+	c := &Client{pid: pid, abort: abort, input: input, readerDone: make(chan struct{}), done: make(chan struct{}), marshal: json.NewEncoder(input)}
 	go func() {
 		defer close(c.readerDone)
 		decoder := json.NewDecoder(output)
@@ -123,7 +171,7 @@ func Launch(ctx context.Context, path string, request Request, trafficLog func(t
 	}()
 	go func() {
 		<-c.readerDone
-		c.err = cmd.Wait()
+		c.err = wait()
 		close(c.done)
 	}()
 	interruptStartup := context.AfterFunc(ctx, func() { input.Close() })
@@ -140,7 +188,7 @@ func Launch(ctx context.Context, path string, request Request, trafficLog func(t
 	return c, nil
 }
 
-func (c *Client) PID() int { return c.cmd.Process.Pid }
+func (c *Client) PID() int { return c.pid }
 
 func (c *Client) ControllerAddress() string { return c.controller }
 func (c *Client) Done() <-chan struct{}     { return c.done }
@@ -190,15 +238,13 @@ func (c *Client) Close() {
 		select {
 		case <-c.done:
 		case <-timer.C:
-			_ = c.cmd.Process.Kill()
+			c.abort()
 			<-c.done
 		}
 	})
 }
 
 func RunCommand(ctx context.Context, path string, request Request) (Response, error) {
-	cmd := exec.CommandContext(ctx, path, "--lanboat-core")
-	hideWindow(cmd)
 	if deadline, ok := ctx.Deadline(); ok {
 		request.Deadline = deadline.UnixNano()
 	}
@@ -206,8 +252,18 @@ func RunCommand(ctx context.Context, path string, request Request) (Response, er
 	if err != nil {
 		return Response{}, err
 	}
-	cmd.Stdin = bytes.NewReader(config)
-	output, runErr := cmd.Output()
+	var output []byte
+	var runErr error
+	if embedded != nil {
+		var reply bytes.Buffer
+		runErr = embedded(ctx, bytes.NewReader(config), &reply)
+		output = reply.Bytes()
+	} else {
+		cmd := exec.CommandContext(ctx, path, "--lanboat-core")
+		hideWindow(cmd)
+		cmd.Stdin = bytes.NewReader(config)
+		output, runErr = cmd.Output()
+	}
 	var response Response
 	if err = json.Unmarshal(output, &response); err != nil {
 		if runErr != nil {

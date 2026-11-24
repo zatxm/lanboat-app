@@ -196,6 +196,36 @@ func ParseURI(raw string) (Node, error) {
 			return Node{}, fmt.Errorf("节点参数重复：%s", key)
 		}
 		value := values[0]
+		if key == "pcs" && value == "" {
+			continue
+		}
+		if key == "headerType" && (kind == "vless" || kind == "vmess") {
+			switch q.Get("type") {
+			case "mkcp", "kcp":
+				n.SetOption("kcp.header", value)
+			case "quic":
+				n.SetOption("quic.header", value)
+			default:
+				if value != "" && value != "none" {
+					return Node{}, errors.New("不支持的节点传输头")
+				}
+			}
+			continue
+		}
+		if key == "quicSecurity" && (kind == "vless" || kind == "vmess") {
+			if q.Get("type") == "quic" {
+				n.SetOption("quic.security", value)
+			} else if value != "" && value != "none" {
+				return Node{}, errors.New("QUIC 加密设置需要 QUIC 传输")
+			}
+			continue
+		}
+		if kind == "hysteria2" && key == "mport" {
+			if !q.Has("ports") {
+				n.SetOption("ports", strings.Trim(value, ", "))
+			}
+			continue
+		}
 		if key == "security" {
 			n.SetOption("tls", value == "tls" || value == "reality")
 			continue
@@ -345,15 +375,21 @@ func parseImport(content string, limit int, rules *[]string) ([]Node, error) {
 		return nil, errors.New("订阅内容不能超过 32 MiB")
 	}
 	content = strings.TrimSpace(strings.TrimPrefix(content, "\ufeff"))
-	for depth := 0; depth < 4; depth++ {
+	for depth := 0; depth <= 4; depth++ {
 		if content == "" {
 			return nil, errors.New("订阅内容为空")
+		}
+		if IsProxyText(content) {
+			return parseProxyText(content, limit, rules)
 		}
 		if strings.HasPrefix(content, "{") || strings.HasPrefix(content, "[") || strings.Contains(content, "proxies:") || strings.Contains(content, "outbounds:") {
 			return parseStructured(content, limit, rules)
 		}
 		if strings.Contains(content, "://") {
 			break
+		}
+		if depth == 4 {
+			return nil, errors.New("Base64 订阅嵌套层数过多")
 		}
 		decoded, err := DecodeBase64(strings.Join(strings.Fields(content), ""))
 		if err != nil {
@@ -364,13 +400,10 @@ func parseImport(content string, limit int, rules *[]string) ([]Node, error) {
 			return nil, errors.New("Base64 解码内容过大")
 		}
 	}
-	if strings.HasPrefix(content, "{") || strings.HasPrefix(content, "[") || strings.Contains(content, "proxies:") || strings.Contains(content, "outbounds:") {
-		return parseStructured(content, limit, rules)
-	}
 	var nodes []Node
 	for lineNo, line := range strings.Split(content, "\n") {
 		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
+		if proxyTextComment(line) || strings.HasPrefix(line, "STATUS=") || strings.HasPrefix(line, "REMARKS=") {
 			continue
 		}
 		n, err := ParseURI(line)
@@ -581,6 +614,13 @@ func parseStructured(content string, limit int, rules *[]string) ([]Node, error)
 			case "plugin":
 				n.Plugin, _ = value.(string)
 			case "type":
+			case "mport":
+				if kind != "hysteria2" {
+					return nil, fmt.Errorf("节点 %d：mport 仅适用于 Hysteria2", i+1)
+				}
+				if m["ports"] == nil {
+					n.SetOption("ports", strings.Trim(fmt.Sprint(value), ", "))
+				}
 			case "ws-opts", "h2-opts", "http-opts", "grpc-opts", "httpupgrade-opts", "xhttp-opts", "reality-opts", "obfs-opts":
 			default:
 				if key == "tls" && (kind == "socks5" || kind == "http") {

@@ -1,22 +1,22 @@
 package native
 
-import "strings"
-
 func (u *UI) importNodes() {
 	u.field("content").SetText("")
 	u.field("nodeImportMethod").SetText("manual")
 	u.field("nodeImportPath").SetText("")
 	u.field("nodeImportURL").SetText("")
+	u.field("nodeImportUA").SetText("")
+	u.field("nodeImportUA.custom").SetText("")
 	u.field("nodeImportRules").SetText("false")
 	u.openEditor("import")
 }
 
 func (v *nativeView) nodeImportFields(box *widget) {
 	u := v.ui
-	const formats = "兼容Lanboat节点JSON、Clash、V2ray/V2fly、Sing-box、Shadowsocks、Sub、Github、Karing订阅。"
+	const formats = "兼容Lanboat节点JSON、普通节点链接、ClashMeta、Quantumult X、Loon、Sing-box和Karing订阅。"
 	hint := v.translate(formats)
 	if v.compactWindow() {
-		hint = strings.Replace(hint, "Shadowsocks", "\nShadowsocks", 1)
+		hint = wrapDialogText(hint, 50)
 	}
 	v.pack(box, v.dataLabel(hint, "help"))
 	method := v.selectWidget(u.field("nodeImportMethod").Text(), []option{{"manual", "手动输入"}, {"subscription", "订阅"}, {"file", "导入文件"}}, false, func(value string) {
@@ -39,14 +39,18 @@ func (v *nativeView) nodeImportFields(box *widget) {
 		v.pack(row, address, v.label("保留分流规则", "field-label"), v.switchInput("nodeImportRules", "保留分流规则"))
 	case "file":
 		v.pack(row, v.button("选择文件", "link icon-upload", false, false, func() {
-			if path := chooseFile("导入节点", "*"); path != "" {
-				u.field("nodeImportPath").SetText(path)
-				u.render()
-			}
+			u.pickFile("导入节点", "*", func(path string) {
+				if path != "" {
+					u.field("nodeImportPath").SetText(path)
+					u.render()
+				}
+			})
 		}))
 	}
 	v.pack(box, row)
 	switch method.value {
+	case "subscription":
+		v.pack(box, v.subscriptionAgent("nodeImportUA", "nodeImportURL"))
 	case "file":
 		if path := u.field("nodeImportPath").Text(); path != "" {
 			v.pack(box, v.dataLabel(path, "help"))

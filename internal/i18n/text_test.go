@@ -9,11 +9,11 @@ import (
 
 func TestTranslations(t *testing.T) {
 	for _, test := range []struct{ source, want string }{
-		{"设置", "Settings"}, {"外观\t雅黑", "Appearance\tDark"},
+		{"设置", "Settings"}, {"主题\t深色", "Theme\tDark"},
 		{"    本地节点", "    Local nodes"}, {"已测试本组 3 / 4 个节点", "Tested 3 / 4 nodes in this group"},
 		{"第 2 / 10 页 · 188 个节点", "Page 2 / 10 · 188 nodes"},
 		{"用户名 *", "Username *"}, {"私钥口令（留空保留）", "Private key passphrase (leave blank to keep)"},
-		{"当前：白色", "Current: Light"}, {"删除「连接」？", "Delete “连接”?"},
+		{"当前：浅色", "Current: Light"}, {"删除「连接」？", "Delete “连接”?"},
 		{"保存配置失败：permission denied", "Failed to save configuration: permission denied"},
 	} {
 		if got := Text("en", test.source); got != test.want {

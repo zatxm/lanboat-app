@@ -247,3 +247,13 @@ jobs:
           else
             gh release upload "$RELEASE_TAG" "${assets[@]}" --repo "$GITHUB_REPOSITORY" --clobber
           fi
+
+  mobile:
+    if: github.event_name == 'workflow_dispatch' && !inputs.verify_only
+    needs: publish
+    permissions:
+      contents: write
+    uses: ./.github/workflows/mobile.yml
+    with:
+      tag: ${{ inputs.tag }}
+    secrets: inherit

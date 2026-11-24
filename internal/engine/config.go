@@ -10,6 +10,10 @@ import (
 )
 
 func BuildConfig(c profile.Config, control, secret string) map[string]any {
+	return buildConfig(c, control, secret, c.Settings.Mode == "tun")
+}
+
+func buildConfig(c profile.Config, control, secret string, tunnel bool) map[string]any {
 	var selected profile.Node
 	for _, n := range c.Nodes {
 		if n.ID == c.Selected {
@@ -76,13 +80,13 @@ func BuildConfig(c profile.Config, control, secret string) map[string]any {
 			domains = append(domains, host)
 		}
 	}
-	config["dns"] = dnsconfig.Build(c, c.Settings.Mode == "tun", "", domains)
+	config["dns"] = dnsconfig.Build(c, tunnel, "", domains)
 	config["route"].(map[string]any)["default_domain_resolver"] = "bootstrap"
 	if selected.TextOption("udp") == "false" && c.Settings.Mode != "direct" && c.Settings.UDP.RelayEnabled() && !c.Settings.UDP.DirectOnly(selected.Kind()) {
 		route := config["route"].(map[string]any)
 		route["rules"] = append([]any{map[string]any{"network": "udp", "action": "reject"}}, route["rules"].([]any)...)
 	}
-	if c.Settings.Mode != "tun" {
+	if !tunnel {
 		route := config["route"].(map[string]any)
 		route["rules"] = append([]any{map[string]any{"port": []int{53}, "action": "hijack-dns"}}, route["rules"].([]any)...)
 	}

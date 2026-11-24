@@ -61,11 +61,13 @@ func (v *nativeView) nodeField(spec profile.Field) *widget {
 		}
 		w := v.selectWidget(u.field(id).Text(), options, false, func(value string) {
 			if spec.Key == "lua-file" && value == "custom" {
-				if path := chooseLuaFile(); path != "" {
-					u.importLuaFile(path)
-				} else {
-					u.render()
-				}
+				u.pickFile("导入 Lua 文件", "*.lua", func(path string) {
+					if path != "" {
+						u.importLuaFile(path)
+					} else {
+						u.render()
+					}
+				})
 				return
 			}
 			u.field(id).SetText(value)

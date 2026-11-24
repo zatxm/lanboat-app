@@ -140,7 +140,12 @@ func (v *nativeView) urlFields(prefix string, defaults []string, labelWidth floa
 	opts = append(opts, option{"custom", "自定义"})
 	input := v.input(prefix+".custom", "https://example.com", false, false, false)
 	input.setExpand(true)
-	custom := row("自定义URL", input)
+	customTitle := "自定义URL"
+	if prefix == "group.test" {
+		input.pointer.Label(v.translate("测速URL"))
+		customTitle = ""
+	}
+	custom := row(customTitle, input)
 	custom.setVisible(u.field(prefix+".choice").Text() == "custom")
 	choice := v.selectWidget(u.field(prefix+".choice").Text(), opts, false, func(value string) {
 		u.field(prefix + ".choice").SetText(value)
@@ -150,38 +155,9 @@ func (v *nativeView) urlFields(prefix string, defaults []string, labelWidth floa
 	})
 	choice.setExpand(true)
 	v.inputs[prefix+".choice"] = choice
-	return v.box("", false, 14, false, row("URL", choice), custom)
-}
-
-func (u *UI) editGroupTestURL() {
-	target := u.field("group.url").Text()
-	choice := target
-	if !slices.Contains(profile.TestURLs, target) {
-		choice = "custom"
+	title := "URL"
+	if prefix == "group.test" {
+		title = "测速URL"
 	}
-	u.field("group.test.choice").SetText(choice)
-	u.field("group.test.custom").SetText(target)
-	u.popup = &popup{kind: "group-test-settings", title: "测速URL", previous: u.popup}
-	u.notify()
-}
-func (v *nativeView) groupTestURLEditor(box *widget) {
-	u := v.ui
-	v.pack(box, v.urlFields("group.test", profile.TestURLs, 0))
-	v.dialogActions(box, func() {
-		target := u.connectivityTarget("group.test")
-		if target == "" {
-			u.err = "请填写URL"
-			u.notify()
-			return
-		}
-		settings := u.state.Config.Settings
-		settings.TestURL = target
-		if err := settings.Validate(); err != nil {
-			u.err = err.Error()
-			u.notify()
-			return
-		}
-		u.field("group.url").SetText(target)
-		u.closePopup()
-	})
+	return v.box("", false, 12, false, row(title, choice), custom)
 }

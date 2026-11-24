@@ -37,10 +37,19 @@ func TestNativeWindowSubscriptionForm(t *testing.T) {
 	v.render()
 	u.editNode(profile.Node{Type: "subscribe"})
 	pump()
-	for _, key := range []string{"protocol", "subURL", "subUDP", "subInsecure", "subFastOpen", "subMax", "subUA", "subPassword", "subFilter", "subKeepRules", "name"} {
+	for _, key := range []string{"protocol", "subURL", "subUDP", "subInsecure", "subFastOpen", "subMax", "subUA.choice", "subPassword", "subFilter", "subKeepRules", "name"} {
 		if v.inputs[key] == nil {
 			t.Fatal("missing subscription field", key)
 		}
+	}
+	selector := v.inputs["subUA.choice"]
+	if selector.value != "" || len(selector.options) != len(profile.SubscriptionUserAgents)+2 ||
+		!strings.Contains(selector.options[0].label, "Lanboat/") {
+		t.Fatal("UserAgent should automatically show the default and offer all presets")
+	}
+	v.inputs["subURL"].edit(server.URL + "?flag=loon")
+	if !strings.Contains(selector.options[0].label, "Loon/1.0") {
+		t.Fatal("Loon link did not update the automatic user agent")
 	}
 	for _, w := range v.widgets {
 		if w.text == "取消" || w.text == "连接信息" || w.text == "名称" || w.text == "名称 / 备注" {
@@ -69,7 +78,7 @@ func TestNativeWindowSubscriptionForm(t *testing.T) {
 	}
 	checkProtocolLayout()
 	edge := v.inputs["protocol"].pointer.Bounds()
-	for _, key := range []string{"subUA", "subFilter", "subURL", "subUDP", "subKeepRules", "name"} {
+	for _, key := range []string{"subUA.choice", "subFilter", "subURL", "subUDP", "subKeepRules", "name"} {
 		w := v.inputs[key]
 		r := w.pointer.Bounds()
 		if r.X != edge.X || !hasClass(w.classes, "switch") && r.W != edge.W {
@@ -98,6 +107,18 @@ func TestNativeWindowSubscriptionForm(t *testing.T) {
 	if u.field("subKeepRules").Text() != "true" || !strings.Contains(v.inputs["subKeepRules"].classes, "switch-on") || next != v.next {
 		t.Fatal("keep rules switch rebuilt form or failed")
 	}
+	v.inputs["subUA.choice"].edit("custom")
+	pump()
+	checkAgentLayout := func() {
+		t.Helper()
+		input := v.inputs["subUA"]
+		got := input.pointer.Bounds()
+		want := v.inputs["subUA.choice"].pointer.Bounds()
+		if !input.visible || got.X != want.X || got.W != want.W || got.Y < want.Y+want.H {
+			t.Fatalf("custom UserAgent input should align below its dropdown: got %v, dropdown %v", got, want)
+		}
+	}
+	checkAgentLayout()
 	for key, value := range map[string]string{"name": "Subscription notes", "subURL": server.URL, "subUDP": "false", "subInsecure": "true", "subFastOpen": "true", "subMax": "5", "subUA": "CustomAgent", "subPassword": "decrypt-secret", "subFilter": "HK|SG"} {
 		if key == "subUDP" || key == "subInsecure" || key == "subFastOpen" {
 			if u.field(key).Text() != value {
@@ -119,6 +140,7 @@ func TestNativeWindowSubscriptionForm(t *testing.T) {
 	}
 	assertEnglishWidgets(t, v)
 	checkProtocolLayout()
+	checkAgentLayout()
 	if u.field("name").Text() != "Subscription notes" || v.inputs["subPassword"].nativeText() != "decrypt-secret" || next != v.next {
 		t.Fatal("translation lost subscription fields")
 	}

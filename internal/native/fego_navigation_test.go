@@ -61,14 +61,23 @@ func TestFegoNavigationAndInput(t *testing.T) {
 }
 
 func TestFegoHomeUsesViewport(t *testing.T) {
-	for _, size := range [][2]int{{1160, 800}, {800, 560}} {
-		t.Run(fmt.Sprintf("%dx%d", size[0], size[1]), func(t *testing.T) {
+	for _, size := range []struct {
+		width, height int
+		mobile        bool
+	}{{1160, 800, false}, {800, 560, false}, {390, 620, true}} {
+		t.Run(fmt.Sprintf("%dx%d", size.width, size.height), func(t *testing.T) {
 			u := testUI(t)
-			for i := range 24 {
-				id := fmt.Sprintf("node-%d", i)
-				u.state.Config.Nodes = append(u.state.Config.Nodes, profile.Node{
+			u.state.Config.Subscriptions = []profile.Subscription{{ID: "feed", Name: "Feed"}}
+			u.expanded["feed"] = true
+			for i := range pageSize + 18 {
+				id := fmt.Sprintf("node-%02d", i)
+				n := profile.Node{
 					ID: id, Name: id, Type: "ss", Method: "aes-256-gcm",
-				})
+				}
+				if i >= pageSize-2 {
+					n.Source = "feed"
+				}
+				u.state.Config.Nodes = append(u.state.Config.Nodes, n)
 			}
 			u.state.Config.Selected = u.state.Config.Nodes[0].ID
 			v, err := newView(u)
@@ -76,35 +85,97 @@ func TestFegoHomeUsesViewport(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer v.dispose()
-			v.compact = size[0] < 940
+			v.compact = size.width < 940
+			if size.mobile {
+				v.mobile = true
+				v.buildRoot()
+			}
 			v.render()
-			v.tester.Width, v.tester.Height = size[0], size[1]
+			v.tester.Width, v.tester.Height = size.width, size.height
 			v.tester.Send(fego.Event{Kind: fego.Resize})
-			scroll := v.scroll.pointer.Bounds()
+			scroll := v.nodeScroll.pointer.Bounds()
 			search := v.inputs["search"].pointer.Bounds()
-			first := v.delayLabels["node-0"].pointer.Bounds()
-			second := v.delayLabels["node-1"].pointer.Bounds()
-			if scroll.Y > 1 || scroll.H < float32(size[1]-1) || search.Y > 150 ||
-				first.Y <= search.Y || second.Y <= first.Y || second.Y+second.H > scroll.H {
+			power := v.power.pointer.Bounds()
+			first := v.delayLabels["node-00"].pointer.Bounds()
+			second := v.delayLabels["node-01"].pointer.Bounds()
+			last := u.state.Config.Nodes[len(u.state.Config.Nodes)-1].ID
+			if scroll.Y < search.Y+search.H || scroll.H < float32(size.height)/2 || search.Y > 150 ||
+				first.Y < scroll.Y || second.Y <= first.Y || second.Y+second.H > scroll.Y+scroll.H {
 				t.Fatalf("content does not use the viewport: scroll=%v search=%v first=%v second=%v", scroll, search, first, second)
+			}
+			if len(v.delayLabels) != len(u.state.Config.Nodes) {
+				t.Fatalf("node list is incomplete: %d nodes", len(v.delayLabels))
 			}
 			var add *widget
 			for _, w := range v.widgets {
+				if hasClass(w.classes, "page-bar") {
+					t.Fatal("home has pagination")
+				}
 				if w.kind == "button" && w.text == "添加节点" {
 					add = w
-					break
 				}
 			}
 			if add == nil || add.buttonCaption != nil || add.icon != "add" {
 				t.Fatal("expected icon-only Add node control")
 			}
-			if b := add.pointer.Bounds(); b.X+b.W > float32(size[0])-16 {
+			if b := add.pointer.Bounds(); b.X+b.W > scroll.X+scroll.W {
 				t.Fatal("Add button extends beyond the content", b)
 			}
-			v.tester.Send(fego.Event{Kind: fego.Scroll, X: scroll.X + 20, Y: scroll.H / 2, DY: 240})
-			if v.delayLabels["node-0"].pointer.Bounds().Y >= first.Y {
+			v.tester.Send(fego.Event{Kind: fego.Scroll, X: scroll.X + 20, Y: scroll.Y + scroll.H/2, DY: 240})
+			if v.delayLabels["node-00"].pointer.Bounds().Y >= first.Y {
 				t.Fatal("node list did not scroll")
 			}
+			// Clicking the scrollbar track below its thumb must reach the bottom.
+			v.tester.Click(scroll.X+scroll.W-4, scroll.Y+scroll.H-2)
+			bottom := v.delayLabels[last].pointer.Bounds()
+			if bottom.Y < scroll.Y || bottom.Y+bottom.H > scroll.Y+scroll.H {
+				t.Fatal("last subscription node is outside the viewport", bottom, scroll)
+			}
+			if got := v.power.pointer.Bounds(); got != power {
+				t.Fatal("connection toolbar moved while scrolling", power, got)
+			}
+			if got := v.inputs["search"].pointer.Bounds(); got != search {
+				t.Fatal("search box moved while scrolling", search, got)
+			}
+			v.inputs["search"].edit(last)
+			v.inputs["search"].dispatch("submit", "")
+			v.tester.Step()
+			if len(v.delayLabels) != 1 || v.delayLabels[last] == nil || v.nodeScroll.scrollPosition(-1) != 0 {
+				t.Fatal("search did not filter all nodes and return the list to the top")
+			}
 		})
+	}
+}
+
+func TestFegoHomeRendersNodeFlagOutsideName(t *testing.T) {
+	u := testUI(t)
+	const name = "🇭🇰 【亚洲】香港01 | V6"
+	const host = "192.0.2.1"
+	u.state.Config.Nodes = []profile.Node{{ID: "hk", Name: name, Server: host, Type: "trojan"}}
+	v, err := newView(u)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer v.dispose()
+	v.render()
+	var title, flag *widget
+	for _, w := range v.widgets {
+		if hasClass(w.classes, "node-title") {
+			title = w
+		}
+		if hasClass(w.classes, "country-flag") {
+			flag = w
+		}
+	}
+	if title == nil || title.pointer.Text() != "【亚洲】香港01 | V6" {
+		t.Fatal("node title should show the remark without the flag glyphs")
+	}
+	if flag == nil || flag.value != "hk" {
+		t.Fatal("node title's flag should be used when the server region is unknown")
+	}
+	u.flags[host] = flagEntry{code: "jp"}
+	v.refresh()
+	if flag.value != "jp" || u.state.Config.Nodes[0].Name != name {
+		t.Fatal("GeoIP should control the icon without changing the original remark")
 	}
 }

@@ -69,11 +69,13 @@ func (v *nativeView) copySetting(title string, value func() string, visible func
 func (v *nativeView) proxyPage() {
 	u := v.ui
 	s := func() profile.Settings { return u.state.Config.Settings }
-	v.settingsSummary("layers", "本地监听", func() { u.editProxy("port") }, v.settingValue("端口", func() string { return strconv.Itoa(s().Port) }), v.label("HTTP与SOCKS5共用此端口。", "help"))
-	auth := v.settingValue("访问认证", func() string { return v.translate(onOff(s().Proxy.Authentication)) })
-	auth.update = func() { auth.setVisible(s().Proxy.AllowLAN) }
-	credentials := func() bool { return s().Proxy.AllowLAN && s().Proxy.Authentication }
-	v.settingsSummary("network-sharing", "网络共享", func() { u.editProxy("sharing") }, v.settingValue("允许局域网设备连接", func() string { return v.translate(onOff(s().Proxy.AllowLAN)) }), auth, v.copySetting("用户", func() string { return s().Proxy.Username }, credentials), v.copySetting("密码", func() string { return s().Proxy.Password }, credentials))
+	if !v.mobile {
+		v.settingsSummary("layers", "本地监听", func() { u.editProxy("port") }, v.settingValue("端口", func() string { return strconv.Itoa(s().Port) }), v.label("HTTP与SOCKS5共用此端口。", "help"))
+		auth := v.settingValue("访问认证", func() string { return v.translate(onOff(s().Proxy.Authentication)) })
+		auth.update = func() { auth.setVisible(s().Proxy.AllowLAN) }
+		credentials := func() bool { return s().Proxy.AllowLAN && s().Proxy.Authentication }
+		v.settingsSummary("network-sharing", "网络共享", func() { u.editProxy("sharing") }, v.settingValue("允许局域网设备连接", func() string { return v.translate(onOff(s().Proxy.AllowLAN)) }), auth, v.copySetting("用户", func() string { return s().Proxy.Username }, credentials), v.copySetting("密码", func() string { return s().Proxy.Password }, credentials))
+	}
 	enabled := func() bool { return s().Proxy.Upstream.Enabled }
 	v.settingsSummary("route", "前置代理", func() { u.editProxy("upstream") }, v.settingValue("启用前置代理", func() string { return v.translate(onOff(enabled())) }), v.copySetting("地址", func() string {
 		p := s().Proxy.Upstream

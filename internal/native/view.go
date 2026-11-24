@@ -2,6 +2,7 @@ package native
 
 import (
 	"fmt"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -15,7 +16,7 @@ import (
 const linuxWindowTitle = "⛵︎ Lanboat"
 
 var pages = []option{{"home", "首页"}, {"data", "数据"}, {"settings", "设置"}}
-var modes = []option{{"rule", "规则"}, {"global", "全局"}, {"tun", "全局+TUN"}, {"direct", "直连"}}
+var modes = []option{{"rule", "规则"}, {"global", "全局"}, {"tun", "全局+TUN"}}
 
 var ruleTypes = func() []option {
 	opts := make([]option, 0, len(routingTypes))
@@ -33,8 +34,8 @@ var actions = []option{{"direct", "直连"}, {"proxy", "代理"}, {"reject", "�
 
 func (v *nativeView) box(class string, horizontal bool, gap int, expand bool, children ...*widget) *widget {
 	w := v.create("box", props{classes: class, horizontal: horizontal, gap: gap, expand: expand})
-	for _, c := range children {
-		v.pack(w, c)
+	if len(children) != 0 {
+		v.pack(w, children...)
 	}
 	return w
 }
@@ -105,10 +106,14 @@ func (v *nativeView) buildRoot() {
 	v.header = v.box("header", true, 16, false, v.back, v.title, v.spacer(), v.save)
 	v.back.setVisible(false)
 	v.save.setVisible(false)
-	sidebar := v.box("sidebar", false, 10, false)
+	sidebarClass := "sidebar"
+	if v.mobile {
+		sidebarClass = "bottom-navigation"
+	}
+	sidebar := v.box(sidebarClass, v.mobile, 8, false)
 	for _, page := range pages {
 		p := page
-		w := v.create("button", props{text: p.label, classes: "button nav-item icon-" + map[string]string{"home": "home", "config": "folder", "data": "data", "settings": "settings"}[p.value]})
+		w := v.create("button", props{text: p.label, classes: "button nav-item icon-only icon-" + p.value})
 		w.event = func(event, value string) {
 			if !u.busy {
 				u.navigate(p.value)
@@ -136,10 +141,31 @@ func (v *nativeView) buildRoot() {
 	v.main = v.box("main", false, 14, true, v.bannerRows[0], v.bannerRows[1], v.bannerRows[2], v.body)
 	v.scroll = v.create("scroll", props{expand: true})
 	v.pack(v.scroll, v.main)
-	content := v.box("", false, 0, true, v.header, v.scroll)
-	v.shell = v.box("shell", true, 0, false, sidebar, v.create("separator", props{}), content)
+	v.frame = v.box("", false, 0, true, v.header, v.scroll)
+	if v.mobile {
+		v.shell = v.box("shell", false, 0, false, v.frame, v.create("separator", props{}), sidebar)
+	} else {
+		v.shell = v.box("shell", true, 0, false, sidebar, v.create("separator", props{}), v.frame)
+	}
 	attachWindow(v)
 }
+
+func (v *nativeView) setPageScroll(enabled bool) {
+	if enabled == (v.main.parent == v.scroll) {
+		return
+	}
+	if enabled {
+		v.frame.content.Children(v.header.pointer, v.scroll.pointer)
+		v.scroll.parent = v.frame
+		v.pack(v.scroll, v.main)
+		return
+	}
+	// The node viewport needs the window's remaining height below the fixed toolbar.
+	v.scroll.content.Children()
+	v.frame.content.Children(v.header.pointer, v.main.pointer)
+	v.main.parent, v.scroll.parent = v.frame, nil
+}
+
 func serverTypes() []option {
 	out := []option{{"subscribe", "Subscribe"}}
 	order := []string{"ss", "ssr", "shadowtls", "vmess", "vless", "relay", "socks5", "socks5s", "http", "https", "http2", "http3", "trojan", "hysteria", "hysteria2", "anytls", "tuic", "juicity", "ssh", "wireguard", "openconnect", "trusttunnel", "masque", "snell", "mieru", "brook", "lua"}
@@ -185,7 +211,9 @@ func (v *nativeView) render() {
 	}
 	v.clear(v.body)
 	v.editorScroll = nil
-	v.body.setExpand(u.editor == "node" || u.editor == "config-file" || u.editor == "config-view" || u.editor == "config-import" || u.editor == "import" || u.editor == "dns-settings" || u.detail == "routing-control" || u.detail == "network-logs" || u.detail == "dns-query" || u.detail == "routing-groups" || u.page == "rules")
+	homeNodes := u.page == "home" && u.editor == "" && u.detail == ""
+	v.setPageScroll(!homeNodes)
+	v.body.setExpand(homeNodes || u.editor == "node" || u.editor == "config-file" || u.editor == "config-view" || u.editor == "config-import" || u.editor == "import" || u.editor == "dns-settings" || u.detail == "routing-control" || u.detail == "network-logs" || u.detail == "dns-query" || u.detail == "routing-groups" || u.page == "rules")
 	v.controls = []control{{v.back, false, false}, {v.save, true, false}}
 	for _, row := range v.bannerRows {
 		for _, w := range v.widgets {
@@ -207,17 +235,14 @@ func (v *nativeView) render() {
 	v.routing = nil
 	v.nodeContainer = nil
 	v.exportNodes = nil
-	v.pagination = nil
+	v.nodeScroll = nil
 	v.logContainer = nil
 	v.logSignature = ""
 	v.backupList, v.backupCreate, v.backupRows = nil, nil, nil
 	titles := map[string]string{"config": "路由规则", "rules": "自定义规则", "logs": "代理日志"}
 	title := titles[u.page]
 	if u.editor != "" {
-		title = map[string]string{"node": "节点详情", "import": "导入节点", "subscription": "订阅详情", "file-rule": "编辑规则", "config-file": "编辑配置", "config-view": "查看配置", "config-import": "新增规则配置", "restore-backup": "恢复备份", "dns-settings": "DNS设置"}[u.editor]
-	}
-	if u.editor == "file-rule" && u.field("route.line").Text() == "0" {
-		title = "添加规则"
+		title = map[string]string{"node": "节点详情", "import": "导入节点", "subscription": "订阅详情", "config-file": "编辑配置", "config-view": "查看配置", "config-import": "新增规则配置", "restore-backup": "恢复备份", "dns-settings": "DNS设置"}[u.editor]
 	}
 	if u.editor == "node" && u.draft.ID == "" {
 		title = "添加节点"
@@ -237,7 +262,7 @@ func (v *nativeView) render() {
 	v.title.setVisible(child)
 	v.header.setVisible(child)
 	for id, w := range v.nav {
-		class := "button nav-item icon-" + map[string]string{"home": "home", "config": "folder", "data": "data", "settings": "settings"}[id]
+		class := "button nav-item icon-only icon-" + id
 		navPage := u.page
 		if navPage == "rules" || navPage == "config" {
 			navPage = "settings"
@@ -324,7 +349,7 @@ func (v *nativeView) refresh() {
 		}
 	}
 	if v.routing != nil && !u.busy {
-		v.routing.setOptions(modes, u.state.Config.Settings.Mode)
+		v.routing.setOptions(v.routingModes(), u.state.Config.Settings.Mode)
 	}
 	for _, c := range v.controls {
 		disabled := c.disabled || (c.widget == v.exportNodes && len(u.state.Config.Nodes) == 0)
@@ -345,7 +370,7 @@ func (v *nativeView) refresh() {
 	}
 	u.refreshFlags(v.nodeContainer != nil)
 	if v.power != nil {
-		v.power.setEnabled(!u.busy && (u.status.Connected || u.state.Config.Selected != "" || u.state.Config.Settings.Mode == "direct"))
+		v.power.setEnabled(!u.busy && (u.status.Connected || u.state.Config.Selected != ""))
 		power := "开启连接"
 		if u.status.Connected {
 			power = "断开连接"
@@ -377,6 +402,44 @@ func (v *nativeView) refresh() {
 	}
 	v.alignCompactForm()
 }
+func (v *nativeView) routingModes() []option {
+	if v.mobile {
+		if runtime.GOOS == "ios" {
+			return modes[1:2]
+		}
+		return modes[:2]
+	}
+	return modes
+}
+
+func (v *nativeView) searchBox(key, label string, submit func()) *widget {
+	u := v.ui
+	draft := u.field(key + ".draft")
+	input := v.create("entry", props{value: draft.Text(), classes: "search-input", expand: true})
+	input.pointer.Label(v.translate(label))
+	input.tooltip = label
+	input.event = func(event, value string) {
+		if event == "change" {
+			draft.SetText(value)
+			return
+		}
+		u.field(key).SetText(strings.TrimSpace(draft.Text()))
+		submit()
+	}
+	input.pointer.OnSubmit(func() { input.dispatch("submit", "") })
+	v.inputs[key] = input
+	icon := v.box("", true, 0, false, v.icon("search"))
+	icon.pointer.Height(26).Padding(0, 0, 6, 0)
+	field := v.box("search-field", true, 0, false)
+	field.pointer = ui.InputGroup(input.pointer, icon.pointer, nil)
+	field.content = field.pointer
+	field.style()
+	input.parent, icon.parent = field, field
+	field.event = func(_, _ string) { input.focus() }
+	v.controls = append(v.controls, control{field, false, false})
+	return field
+}
+
 func (v *nativeView) home() {
 	u := v.ui
 	if strings.HasPrefix(u.detail, "subscription:") {
@@ -384,12 +447,14 @@ func (v *nativeView) home() {
 		return
 	}
 	v.connection = v.label("连接", "connection-title toolbar-label")
-	v.power = v.button("开启连接", "switch", false, u.state.Config.Selected == "" && u.state.Config.Settings.Mode != "direct", u.connect)
+	v.power = v.button("开启连接", "switch", false, u.state.Config.Selected == "", u.connect)
 	connection := v.box("", true, 6, false, v.connection, v.power)
-	route := v.selectWidget(u.state.Config.Settings.Mode, modes, true, func(mode string) { blurFocus(); u.settings(mode) })
+	route := v.selectWidget(u.state.Config.Settings.Mode, v.routingModes(), true, func(mode string) { blurFocus(); u.settings(mode) })
 	v.routing = route
 	route.setClasses("compact")
-	route.setTooltip("全局+TUN 接管系统 TCP/UDP 流量；连接时可能需要系统授权，具体取决于操作系统。")
+	if !v.mobile {
+		route.setTooltip("全局+TUN 接管系统 TCP/UDP 流量；连接时可能需要系统授权，具体取决于操作系统。")
+	}
 	routing := v.box("", true, 6, false, v.label("代理模式", "field-label toolbar-label"), route)
 	test := v.button("延迟测试", "link icon-only icon-test", false, false, u.testVisibleNodes)
 	test.update = func() {
@@ -410,76 +475,47 @@ func (v *nativeView) home() {
 	} else {
 		nodeToolbar = v.box("home-toolbar", true, 4, false, settings, v.spacer(), actions)
 	}
-	search := v.create("entry", props{value: u.field("search").Text(), classes: "search-input", expand: true})
-	search.event = func(event, value string) {
-		u.field("search").SetText(value)
-		u.nodePage = 0
+	searchField := v.searchBox("search", "搜索节点", func() {
+		v.nodeScroll.scrollPosition(0)
 		u.nodesDirty = true
 		u.notify()
-	}
-	v.inputs["search"] = search
-	icon := v.icon("search")
-	searchField := v.box("search-field", true, 0, false)
-	searchField.pointer = ui.InputGroup(search.pointer, icon.pointer, nil)
-	searchField.content = searchField.pointer
-	searchField.style()
-	search.parent, icon.parent = searchField, searchField
-	searchField.event = func(_, _ string) { search.focus() }
-	v.controls = append(v.controls, control{searchField, false, false})
+	})
 	v.nodeContainer = v.box("", false, 18, false)
-	v.pagination = v.box("", true, 6, false)
-	v.pack(v.body, nodeToolbar, searchField, v.nodeContainer, v.pagination)
+	v.nodeScroll = v.create("scroll", props{expand: true})
+	v.pack(v.nodeScroll, v.nodeContainer)
+	v.pack(v.body, nodeToolbar, searchField, v.nodeScroll)
 	v.renderNodes()
 }
 func (v *nativeView) renderNodes() {
 	u := v.ui
-	// Controls belonging to discarded rows must not survive a page or filter change.
-	old := map[*widget]bool{}
-	for _, w := range v.widgets {
-		for p := w.parent; p != nil; p = p.parent {
-			if p == v.nodeContainer || p == v.pagination {
-				old[w] = true
-				break
-			}
-		}
-	}
-	kept := v.controls[:0]
-	for _, c := range v.controls {
-		if !old[c.widget] {
-			kept = append(kept, c)
-		}
-	}
-	v.controls = kept
 	v.clear(v.nodeContainer)
-	v.clear(v.pagination)
 	v.delayLabels = map[string]*widget{}
-	nodes := filterNodes(u.state.Config.Nodes, u.field("search").Text())
-	start, end, page := pageBounds(len(nodes), u.nodePage)
-	u.nodePage = page
+	query := u.field("search").Text()
 	u.flagHosts = nil
 	hosts := map[string]bool{}
 	sources := map[string]bool{}
 	for _, s := range u.state.Config.Subscriptions {
 		sources[s.ID] = true
 	}
-	local := func(n profile.Node) bool { return n.Source == "" || !sources[n.Source] }
-	counts := make(map[string]int, len(sources)+1)
-	for _, n := range nodes {
-		if local(n) {
-			counts[""]++
-		} else {
-			counts[n.Source]++
+	grouped := make(map[string][]profile.Node, len(sources)+1)
+	for _, n := range filterNodes(u.state.Config.Nodes, query) {
+		id := n.Source
+		if !sources[id] {
+			id = ""
 		}
+		grouped[id] = append(grouped[id], n)
 	}
 	groups := []profile.Subscription{{ID: "", Name: "本地节点"}}
 	groups = append(groups, u.state.Config.Subscriptions...)
+	panels := make([]*widget, 0, len(groups))
 	for _, group := range groups {
 		g := group
-		count := counts[g.ID]
+		nodes := grouped[g.ID]
+		count := len(nodes)
 		if g.ID == "" && count == 0 {
 			continue
 		}
-		expanded := u.expanded[g.ID] || u.field("search").Text() != ""
+		expanded := u.expanded[g.ID] || query != ""
 		panel := v.box("panel group", false, 0, false)
 		groupButton := v.button(g.Name, func() string {
 			if expanded {
@@ -517,15 +553,15 @@ func (v *nativeView) renderNodes() {
 			v.pack(header, v.button("分享订阅", "link icon-only icon-share", false, false, func() { u.share("subscription", g.ID, g.Name) }))
 			v.pack(header, v.button("删除订阅", "link danger icon-only icon-delete", true, false, func() { u.confirm = &deletion{kind: "subscription", id: g.ID, name: g.Name}; u.notify() }))
 		}
-		v.pack(panel, header)
+		rows := []*widget{header}
 		if expanded {
-			var lastRow *widget
-			for _, n := range nodes[start:end] {
-				if n.Source != g.ID && !(g.ID == "" && local(n)) {
-					continue
-				}
-				n := n
+			rows = slices.Grow(rows, count*2)
+			for i, n := range nodes {
 				class := "node-row home-node-row"
+				last := i == count-1
+				if last {
+					class += " home-node-last"
+				}
 				selected := u.state.Config.Selected
 				if u.status.Connected && u.status.ActiveNode != "" {
 					selected = u.status.ActiveNode
@@ -539,7 +575,8 @@ func (v *nativeView) renderNodes() {
 					u.flagHosts = append(u.flagHosts, n.Server)
 					hosts[n.Server] = true
 				}
-				flag := v.countryIcon(n.Server)
+				name, country := splitNodeFlag(n.Name)
+				flag := v.countryIcon(n.Server, country)
 				detail := v.button("节点详情", "link icon-only icon-info", false, false, func() { u.editNode(n) })
 				offline := v.icon("unreachable")
 				offline.setTooltip("节点连通性测试失败")
@@ -559,7 +596,7 @@ func (v *nativeView) renderNodes() {
 					delay.setText(text)
 				}
 				row := v.box(class, true, 8, false, flag,
-					v.box("", false, 4, true, v.dataLabel(n.Name, "node-name node-title"), v.dataLabel(nodeDescription(n), "help")),
+					v.box("", false, 4, true, v.dataLabel(name, "node-name node-title"), v.dataLabel(nodeDescription(n), "help")),
 					status, detail,
 					v.button("分享节点", "link icon-only icon-share", false, false, func() { u.share("node", n.ID, n.Name) }))
 				if g.ID == "" {
@@ -577,7 +614,7 @@ func (v *nativeView) renderNodes() {
 						selected = u.status.ActiveNode
 					}
 					class := "node-row home-node-row"
-					if row == lastRow {
+					if last {
 						class += " home-node-last"
 					}
 					if selected == n.ID {
@@ -592,19 +629,14 @@ func (v *nativeView) renderNodes() {
 					}
 				}
 				v.controls = append(v.controls, control{row, false, false})
-				v.pack(panel, v.create("separator", props{}), row)
-				lastRow = row
+				rows = append(rows, v.create("separator", props{}), row)
 			}
 		}
-		v.pack(v.nodeContainer, panel)
+		v.pack(panel, rows...)
+		panels = append(panels, panel)
 	}
-	v.pagination.setVisible(len(nodes) > pageSize)
-	if len(nodes) > pageSize {
-		v.pack(v.pagination, v.pageBar(page, (len(nodes)+pageSize-1)/pageSize, len(nodes), func(next int) {
-			u.nodePage = next
-			u.nodesDirty = true
-			u.notify()
-		}))
+	if len(panels) != 0 {
+		v.pack(v.nodeContainer, panels...)
 	}
 }
 
@@ -801,10 +833,8 @@ func (v *nativeView) editor() *widget {
 		v.configImportFields(box)
 	case "restore-backup":
 		v.pack(box, v.box("field", false, 8, false, v.label("备份文件路径或 JSON 内容（恢复会替换现有数据）", "field-label"), v.input("content", "", true, false, false)))
-	case "file-rule":
-		v.routingRuleFields(box)
 	}
-	if u.editor == "config-file" || u.editor == "config-view" || u.editor == "config-import" || u.editor == "import" || u.editor == "file-rule" || u.editor == "dns-settings" {
+	if u.editor == "config-file" || u.editor == "config-view" || u.editor == "config-import" || u.editor == "import" || u.editor == "dns-settings" {
 		return frame
 	}
 	if u.editor != "node" {
@@ -825,7 +855,7 @@ func (v *nativeView) subscriptionFields(box *widget) {
 	for _, spec := range []struct{ id, title string }{{"subUDP", "UDP 转发"}, {"subInsecure", "允许不安全"}, {"subFastOpen", "TCP 快速打开"}} {
 		v.pack(box, v.nodeRow(spec.title, v.switchInput(spec.id, spec.title)))
 	}
-	v.pack(box, v.field("subMax", "最大值", "可选，1–100000", false), v.field("subUA", "UserAgent", "可选", false))
+	v.pack(box, v.field("subMax", "最大值", "可选，1–100000", false), v.subscriptionAgent("subUA", "subURL"))
 	v.inputs["subMax"].setTooltip("如指定最大数量，但服务器返回多于这个数值会被随机丢弃多余的")
 	password := "密码"
 	if u.draft.ID != "" {

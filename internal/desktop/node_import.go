@@ -62,7 +62,7 @@ func (a *App) Import(content string) (int, error) {
 	}
 	var groups []importGroup
 	var local []string
-	structured := strings.HasPrefix(content, "{") || strings.HasPrefix(content, "[") || strings.Contains(content, "proxies:") || strings.Contains(content, "outbounds:") || strings.Contains(content, "proxy-providers:")
+	structured := profile.IsProxyText(content) || strings.HasPrefix(content, "{") || strings.HasPrefix(content, "[") || strings.Contains(content, "proxies:") || strings.Contains(content, "outbounds:") || strings.Contains(content, "proxy-providers:")
 	if structured {
 		local = append(local, content)
 	} else {
@@ -82,7 +82,7 @@ func (a *App) Import(content string) (int, error) {
 			if !strings.Contains(line, "://") && queue[i].depth < 4 {
 				if decoded, err := profile.DecodeBase64(line); err == nil && len(decoded) <= profile.MaxImport {
 					value := strings.TrimSpace(string(decoded))
-					if strings.HasPrefix(value, "{") || strings.HasPrefix(value, "[") || strings.Contains(value, "proxies:") || strings.Contains(value, "outbounds:") || strings.Contains(value, "proxy-providers:") {
+					if profile.IsProxyText(value) || strings.HasPrefix(value, "{") || strings.HasPrefix(value, "[") || strings.Contains(value, "proxies:") || strings.Contains(value, "outbounds:") || strings.Contains(value, "proxy-providers:") {
 						value, err = a.expandClashProviders(value, profile.Subscription{})
 						if err != nil {
 							return 0, err
@@ -118,7 +118,7 @@ func (a *App) Import(content string) (int, error) {
 				}
 			}
 			if err == nil && (parsed.Scheme == "http" || parsed.Scheme == "https") && parsed.Hostname() != "" && parsed.User == nil {
-				group, err := a.subscriptionImportGroup(line, name, password, true)
+				group, err := a.subscriptionImportGroup(profile.Subscription{URL: line, Name: name, Password: password, KeepRules: true})
 				if err != nil {
 					return 0, err
 				}
@@ -146,31 +146,32 @@ func (a *App) Import(content string) (int, error) {
 }
 
 func (a *App) ImportSubscription(address string, keepRules bool) (int, error) {
-	group, err := a.subscriptionImportGroup(address, "", "", keepRules)
+	return a.ImportSubscriptionOptions(profile.Subscription{URL: address, KeepRules: keepRules})
+}
+
+func (a *App) ImportSubscriptionOptions(sub profile.Subscription) (int, error) {
+	group, err := a.subscriptionImportGroup(sub)
 	if err != nil {
 		return 0, err
 	}
 	return a.commitImport([]importGroup{group})
 }
 
-func (a *App) subscriptionImportGroup(address, name, password string, keepRules bool) (importGroup, error) {
-	address = githubRaw(address)
-	parsed, err := url.Parse(address)
-	if err == nil {
-		if name == "" {
-			name = parsed.Hostname()
-		}
-		if name == parsed.Hostname() && name == "raw.githubusercontent.com" {
-			name = path.Base(parsed.Path)
+func (a *App) subscriptionImportGroup(sub profile.Subscription) (importGroup, error) {
+	sub.URL = githubRaw(sub.URL)
+	sub.ID = profile.ID()
+	if parsed, err := url.Parse(sub.URL); err == nil && sub.Name == "" {
+		sub.Name = parsed.Hostname()
+		if sub.Name == "raw.githubusercontent.com" {
+			sub.Name = path.Base(parsed.Path)
 		}
 	}
-	sub := profile.Subscription{ID: profile.ID(), Name: name, URL: address, Password: password, KeepRules: keepRules}
 	if err := sub.Validate(); err != nil {
 		return importGroup{}, err
 	}
 	payload, err := a.downloadSubscription(sub)
 	if err != nil {
-		return importGroup{}, fmt.Errorf("订阅 %s：%w", name, err)
+		return importGroup{}, fmt.Errorf("订阅 %s：%w", sub.Name, err)
 	}
 	payload, err = a.expandClashProviders(payload, sub)
 	if err != nil {
@@ -178,7 +179,7 @@ func (a *App) subscriptionImportGroup(address, name, password string, keepRules 
 	}
 	nodes, rules, err := profile.ParseSubscription(payload, sub, "[Rule]\n")
 	if err != nil {
-		return importGroup{}, fmt.Errorf("订阅 %s：%w", name, err)
+		return importGroup{}, fmt.Errorf("订阅 %s：%w", sub.Name, err)
 	}
 	sub.UpdatedAt = time.Now().Format(time.RFC3339)
 	for i := range nodes {

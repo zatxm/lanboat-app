@@ -69,10 +69,12 @@ func (v *nativeView) configImportFields(box *widget) {
 	switch u.field("importMethod").Text() {
 	case "file":
 		v.pack(methodRow, v.button("选择文件", "link icon-upload", false, false, func() {
-			if filename := chooseFile("新增规则配置", "*"); filename != "" {
-				u.field("importPath").SetText(filename)
-				u.previewConfig(filename, filepath.Base(filename))
-			}
+			u.pickFile("新增规则配置", "*", func(filename string) {
+				if filename != "" {
+					u.field("importPath").SetText(filename)
+					u.previewConfig(filename, filepath.Base(filename))
+				}
+			})
 		}))
 		if filename := u.field("importPath").Text(); filename != "" {
 			name := v.dataLabel(filepath.Base(filename), "help node-title")

@@ -3,7 +3,8 @@ package native
 import (
 	"context"
 	"fmt"
-	"github.com/zatxm/lanboat-app/internal/ruledata"
+	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"github.com/zatxm/lanboat-app/internal/appmeta"
 	"github.com/zatxm/lanboat-app/internal/profile"
 	"github.com/zatxm/lanboat-app/internal/routing"
+	"github.com/zatxm/lanboat-app/internal/ruledata"
 )
 
 func (v *nativeView) row(title, value string, locked bool, action func()) *widget {
@@ -71,12 +73,7 @@ func (u *UI) editConfigFile(f profile.ConfigFile) {
 	}
 }
 func (u *UI) exportData(kind, id string) {
-	directory := chooseDirectory("选择保存目录")
-	if directory == "" {
-		return
-	}
-	var saved string
-	u.submit(func() error { var err error; saved, err = u.backend.ExportDataTo(kind, id, directory); return err }, func() { u.notice = fmt.Sprintf("已导出到：\n%s", saved) })
+	u.saveFile(func(directory string) (string, error) { return u.backend.ExportDataTo(kind, id, directory) })
 }
 
 func (v *nativeView) configPage() {
@@ -298,19 +295,35 @@ func (v *nativeView) settingsPage() {
 	language.update = func() {
 		language.setOptions([]option{{"zh", "中文"}, {"en", "English"}}, u.state.Config.Settings.Language)
 	}
-	theme := v.selectWidget(u.state.Config.Settings.Appearance, []option{{"light", "白色"}, {"dark", "雅黑"}}, false, func(value string) { u.changeSettings(func(s *profile.Settings) { s.Appearance = value }) })
+	themeOptions := []option{{"light", "浅色"}, {"dark", "深色"}}
+	themeIcon := v.icon("sun")
+	theme := v.selectWidget(u.state.Config.Settings.Appearance, themeOptions, false, func(value string) { u.changeSettings(func(s *profile.Settings) { s.Appearance = value }) })
 	theme.update = func() {
 		current := u.state.Config.Settings.Appearance
 		if current == "" {
 			current = "light"
 		}
-		theme.setOptions([]option{{"light", "白色"}, {"dark", "雅黑"}}, current)
+		theme.setOptions(themeOptions, current)
+		icon := "sun"
+		if current == "dark" {
+			icon = "moon"
+		}
+		if themeIcon.icon != icon {
+			themeIcon.icon = icon
+			themeIcon.pointer.Refresh()
+		}
 	}
 	language.setClasses("compact")
 	theme.setClasses("compact")
-	v.group("", v.box("group-row", true, 28, false,
-		v.box("", true, 10, true, v.icon("language"), v.label("语言", "node-name"), v.spacer(), language),
-		v.box("", true, 10, true, v.icon("moon"), v.label("主题", "node-name"), v.spacer(), theme)))
+	languageRow := v.box("group-row", true, 10, true, v.icon("language"), v.label("语言", "node-name"), v.spacer(), language)
+	themeRow := v.box("group-row", true, 10, true, themeIcon, v.label("主题", "node-name"), v.spacer(), theme)
+	if v.mobile {
+		v.group("", languageRow, themeRow)
+	} else {
+		languageRow.setClasses("")
+		themeRow.setClasses("")
+		v.group("", v.box("group-row", true, 28, false, languageRow, themeRow))
+	}
 
 	dnsRow := v.settingsRow("DNS设置", "", false, u.openDNS)
 	dnsRow.setClasses(dnsRow.classes + " settings-align")
@@ -324,15 +337,22 @@ func (v *nativeView) settingsPage() {
 	udpRow.setClasses(udpRow.classes + " settings-align")
 	routingRow := v.settingsRow("路由规则", "", false, func() { u.openPage("config") })
 	routingRow.setClasses(routingRow.classes + " settings-align")
-	v.group("连接", proxyRow, tcpRow, udpRow, routingRow, dnsRow)
+	switch {
+	case v.mobile && runtime.GOOS == "ios":
+		v.group("连接", tcpRow)
+	case v.mobile:
+		upstream := v.settingsRow("前置代理", "", false, u.openProxy)
+		upstream.setClasses(upstream.classes + " settings-align")
+		v.group("连接", upstream, tcpRow, udpRow, routingRow, dnsRow)
+	default:
+		v.group("连接", proxyRow, tcpRow, udpRow, routingRow, dnsRow)
+	}
 	v.group("高级", v.settingsRow("连通性测试", "", false, u.openConnectivity), v.settingsRow("代理泄漏检测", "", false, func() { u.openExternal("https://browserleaks.com/ip") }), v.settingsRow("备份", "", false, u.openBackups), v.settingsRow("关于", appmeta.Version, false, func() { u.popup = &popup{kind: "about", title: "关于"}; u.notify() }))
 
 }
 func (u *UI) testVisibleNodes() {
 	nodes := filterNodes(u.state.Config.Nodes, u.field("search").Text())
-	start, end, _ := pageBounds(len(nodes), u.nodePage)
-	nodes = append([]profile.Node{}, nodes[start:end]...)
-	u.testNodes(nodes, "当前页")
+	u.testNodes(slices.Clone(nodes))
 }
 
 func (u *UI) testGroupNodes(id string) {
@@ -346,11 +366,11 @@ func (u *UI) testGroupNodes(id string) {
 			nodes = append(nodes, n)
 		}
 	}
-	u.testNodes(nodes, "本组")
+	u.testNodes(nodes)
 }
 
-func (u *UI) testNodes(nodes []profile.Node, scope string) {
-	if u.testing {
+func (u *UI) testNodes(nodes []profile.Node) {
+	if u.testing || len(nodes) == 0 {
 		return
 	}
 	u.testing = true

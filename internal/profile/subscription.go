@@ -263,3 +263,41 @@ func mergeRules(defaultConfig string, lines []string, allowed map[string]bool) (
 	}
 	return content, nil
 }
+
+// SubscriptionUserAgents lists the client identifiers that can be sent as-is.
+var SubscriptionUserAgents = []string{
+	"Karing/1.2.26.2931 platform/linux",
+	"mihomo/1.19.28",
+	"clash-verge",
+	"FLClash",
+	"mihomo.party/v2.0.0 (clash.meta)",
+	"ClashMeta",
+	"v2ray",
+	"sing-box 1.14.0",
+	"NekoBox/Android/1.4.1 (Prefer ClashMeta Format)",
+	"HiddifyNext",
+	"Shadowrocket/1.0",
+	"Quantumult%20X/1.0",
+	"Loon/1.0",
+}
+
+// SubscriptionFormatAgent returns the format-specific agent and the narrow
+// fallback for unmarked subscription APIs that reject unknown client names.
+func SubscriptionFormatAgent(u *url.URL) (agent, fallback string) {
+	query := u.Query()
+	switch strings.ToLower(query.Get("flag")) {
+	case "shadowrocket":
+		return "Shadowrocket/1.0", ""
+	case "clash", "clashmeta", "clash.meta", "mihomo":
+		return "ClashMeta", ""
+	case "quantumultx", "quantumult x", "quantumult-x", "quanx", "qx":
+		return "Quantumult%20X/1.0", ""
+	case "loon":
+		return "Loon/1.0", ""
+	case "":
+		if u.Scheme == "https" && strings.HasSuffix(u.Path, "/api/v1/client/subscribe") && query.Get("token") != "" {
+			return "", "ClashMeta"
+		}
+	}
+	return "", ""
+}

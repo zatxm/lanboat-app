@@ -235,6 +235,9 @@ func coreOptions(n profile.Node, out map[string]any) {
 		if text("tls-sha256") != "" {
 			tls["certificate_sha256"] = optionList(n, "tls-sha256")
 		}
+		if text("tls-pubkey-sha256") != "" {
+			tls["certificate_public_key_sha256"] = optionList(n, "tls-pubkey-sha256")
+		}
 		if text("fragment") == "true" {
 			tls["fragment"] = true
 		}

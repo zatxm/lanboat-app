@@ -201,9 +201,11 @@ func validateNodeOptions(n Node) error {
 				return fmt.Errorf("短 ID 需为最多 16 位十六进制")
 			}
 		}
-		if n.TextOption("tls-sha256") != "" {
-			if _, err := DecodeSHA256(n.TextOption("tls-sha256")); err != nil {
-				return err
+		for _, pin := range []string{"tls-sha256", "tls-pubkey-sha256"} {
+			if hash := n.TextOption(pin); hash != "" {
+				if _, err := DecodeSHA256(hash); err != nil {
+					return err
+				}
 			}
 		}
 		if _, err := ClientCertificate(n); err != nil {

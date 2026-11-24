@@ -62,7 +62,7 @@ type nativeView struct {
 	theme                                               string
 	language                                            string
 	window                                              *fego.Window
-	compact, compactRouting                             bool
+	compact, compactRouting, mobile                     bool
 	formAlignmentPending                                bool
 	events                                              fego.View
 	doc                                                 *ui.Document
@@ -70,7 +70,7 @@ type nativeView struct {
 	ui                                                  *UI
 	widgets                                             map[int]*widget
 	next                                                int
-	shell, scroll, main, body                           *widget
+	shell, frame, scroll, main, body                    *widget
 	editorScroll                                        *widget
 	popupRoot, popupError                               *widget
 	updateCheck                                         *widget
@@ -90,7 +90,7 @@ type nativeView struct {
 	totalUp                                             *widget
 	connections                                         *widget
 	uptime                                              *widget
-	nodeContainer, pagination, exportNodes              *widget
+	nodeContainer, nodeScroll, exportNodes              *widget
 	delayLabels                                         map[string]*widget
 	logContainer, logPager                              *widget
 	logSignature                                        string
@@ -116,6 +116,8 @@ func toolkitVersion() string {
 func newView(u *UI) (*nativeView, error) {
 	v := &nativeView{ui: u, widgets: map[int]*widget{}, nav: map[string]*widget{}}
 	u.view = v
+	v.mobile = runtime.GOOS == "android" || runtime.GOOS == "ios"
+	v.compact, v.compactRouting = v.mobile, v.mobile
 	v.buildRoot()
 	v.applyTheme()
 	return v, nil
@@ -123,6 +125,10 @@ func newView(u *UI) (*nativeView, error) {
 func attachWindow(v *nativeView) { v.doc = ui.View(v.shell.pointer.Fill()) }
 func Run(backend *desktop.App, logger *zap.Logger) error {
 	appID, title := "org.lanboat.desktop", appmeta.Name
+	mobile := runtime.GOOS == "android" || runtime.GOOS == "ios"
+	if mobile {
+		appID = "org.lanboat.mobile"
+	}
 	windowPNG, trayPNG := icons.PNG, icons.TrayPNG
 	if runtime.GOOS == "linux" {
 		appID, title = appmeta.ID, linuxWindowTitle
@@ -169,11 +175,13 @@ func Run(backend *desktop.App, logger *zap.Logger) error {
 			return
 		}
 		v.render()
-		tray, err := fego.App.NewTray(fego.TrayOptions{Icon: trayIcon, Menu: v.trayMenu()})
-		if err != nil {
-			logger.Warn("initialize system tray", zap.Error(err))
+		if !mobile {
+			tray, err := fego.App.NewTray(fego.TrayOptions{Icon: trayIcon, Menu: v.trayMenu()})
+			if err != nil {
+				logger.Warn("initialize system tray", zap.Error(err))
+			}
+			v.tray = tray
 		}
-		v.tray = tray
 		v.window.OnReady(func() {
 			go func() {
 				debug.FreeOSMemory()
@@ -285,9 +293,6 @@ func (v *nativeView) create(kind string, p props) *widget {
 				w.pointer = ui.TextInput(p.value)
 			}
 			w.pointer.Password(p.secret).Placeholder(v.translate(p.placeholder)).OnChange(func(val string) { w.value = val; w.dispatch("change", val) })
-			if hasClass(p.classes, "search-input") {
-				w.pointer.Label(v.translate("搜索节点"))
-			}
 		}
 	case "select":
 		w.pointer = ui.Box().Gap(0)
@@ -331,13 +336,15 @@ func (v *nativeView) create(kind string, p props) *widget {
 	return w
 }
 func (v *nativeView) pack(parent *widget, children ...*widget) {
+	elements := make([]*ui.Element, 0, len(children))
 	for _, c := range children {
-		parent.content.Append(c.pointer)
+		elements = append(elements, c.pointer)
 		c.parent = parent
 		if c.event != nil && c.kind == "box" && c != v.popupRoot {
 			c.pointer.OnClick(func() { c.dispatch("click", "") })
 		}
 	}
+	parent.content.Append(elements...)
 }
 func (v *nativeView) clear(parent *widget) {
 	ids := []int{}
@@ -388,10 +395,6 @@ func (w *widget) displayText() string {
 	return w.view.translate(w.text)
 }
 
-var glyphs = map[string]string{
-	"home": "⌂", "folder": "▱", "data": "▥", "settings": "⚙", "sail": "◭", "server": "▤", "route": "⇄", "search": "⚲", "back": "←", "forward": "→", "chevron": "›", "down": "↓", "up": "↑", "close": "×", "delete": "×", "import": "⇧", "export": "⇩", "download": "↓", "upload": "↑", "share": "↗", "refresh": "↻", "check": "✓", "save": "✓", "add": "+", "edit": "✎", "test": "◷", "speed": "◴", "info": "ⓘ", "copy": "▣", "link": "↗", "logs": "▤", "tcp": "⇄", "udp": "⇆", "dns": "◎", "moon": "◐", "globe": "◎", "layers": "▤", "file": "▱", "play": "▷",
-}
-
 func (w *widget) localize() {
 	if w.kind != "button" && w.kind != "label" {
 		return
@@ -406,9 +409,8 @@ func (w *widget) localize() {
 		return
 	}
 	if w.kind == "button" {
-		icon := buttonIcon(w.classes)
 		if lineButton(w.classes) {
-			w.icon = icon
+			w.icon = buttonIcon(w.classes)
 			if w.buttonValue != nil {
 				title, value, _ := strings.Cut(w.text, "\t")
 				w.buttonCaption.SetText(w.view.translate(title))
@@ -427,9 +429,6 @@ func (w *widget) localize() {
 			}
 			w.pointer.Label(accessible).Tooltip(tip).Refresh()
 			return
-		}
-		if g := glyphs[icon]; g != "" {
-			label = g + " " + label
 		}
 	}
 	if w.loading {
@@ -545,7 +544,7 @@ func (v *nativeView) refreshLanguage() {
 			w.localizeOptions()
 		}
 		if hasClass(w.classes, "search-input") {
-			w.content.Label(v.translate("搜索节点"))
+			w.content.Label(v.translate(w.tooltip))
 		}
 	}
 }
@@ -605,9 +604,6 @@ func copyClipboard(s string) {
 		active.window.SetClipboard(s)
 	}
 }
-func chooseLuaFile() string                   { return chooseFile("导入 Lua 文件", "*.lua") }
-func chooseFile(title, pattern string) string { return choosePath(title, pattern, false) }
-func chooseDirectory(title string) string     { return choosePath(title, "", true) }
 func choosePath(title, pattern string, dir bool) string {
 	title = active.translate(title)
 	var cmd *exec.Cmd
@@ -720,4 +716,10 @@ func (w *widget) scrollPosition(pos int) int {
 	}
 	return old
 }
-func (v *nativeView) top() { v.scroll.scrollPosition(0) }
+func (v *nativeView) top() {
+	if v.nodeScroll != nil {
+		v.nodeScroll.scrollPosition(0)
+	} else {
+		v.scroll.scrollPosition(0)
+	}
+}

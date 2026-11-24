@@ -74,7 +74,7 @@ func tlsNodeFields(n Node, forced, simple, hideHTTP2, mutual bool) []Field {
 	if !simple && n.TextOption("fragment") == "true" {
 		fields = append(fields, withGroup("TLS 设置/片段设置", number("fragment-opts.length-min", "Length 最小值", "40"), number("fragment-opts.length-max", "Length 最大值", "60"), number("fragment-opts.interval-min", "间隔最小值", "30"), number("fragment-opts.interval-max", "间隔最大值", "50"), textDefault("fragment-opts.packets", "数据包", "tlshello"))...)
 	}
-	fields = append(fields, withGroup("TLS 设置", f("tls-sha256", "SHA256", false))...)
+	fields = append(fields, withGroup("TLS 设置", f("tls-sha256", "SHA256", false), f("tls-pubkey-sha256", "TLS 公钥 SHA256", false))...)
 	if mutual {
 		fields = append(fields, withGroup("TLS 设置", boolean("mutual-auth", "相互认证", "false"))...)
 		if n.TextOption("mutual-auth") == "true" {
