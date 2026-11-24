@@ -284,7 +284,7 @@ func TestNativeWindowDNSAndAbout(t *testing.T) {
 	if u.popup.kind != "app-update" || u.popup.releaseTag != release.Tag || u.popup.previous != about {
 		t.Fatal("new release dialog")
 	}
-	button("查看 GitHub 发布页").click()
+	button("更新").click()
 	wait()
 	deadline = time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {

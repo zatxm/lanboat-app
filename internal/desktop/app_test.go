@@ -196,6 +196,42 @@ func TestLogEntriesKeepFields(t *testing.T) {
 	}
 }
 
+func TestDiskLogRotationAndClear(t *testing.T) {
+	dir := t.TempDir()
+	logger, logs, closeLog := NewLogger(dir)
+	defer closeLog()
+	logger.Info("before rotation")
+	payload := strings.Repeat("x", 64<<10)
+	for range 34 {
+		logger.Info(payload)
+	}
+	logger.Info("after rotation")
+	if err := logger.Sync(); err != nil {
+		t.Fatal(err)
+	}
+	logDir := filepath.Join(dir, "logs")
+	backups, err := filepath.Glob(filepath.Join(logDir, "app-*.log"))
+	if err != nil || len(backups) != 1 {
+		t.Fatalf("expected one rotated log, got %v: %v", backups, err)
+	}
+	active := filepath.Join(logDir, "app.log")
+	data, err := os.ReadFile(active)
+	if err != nil || !strings.Contains(string(data), "after rotation") || strings.Contains(string(data), "before rotation") {
+		t.Fatalf("active file should contain the entries after rotation: %v", err)
+	}
+	if err := logs.Clear(); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(logDir)
+	if err != nil || len(entries) != 1 || entries[0].Name() != "app.log" || len(logs.List()) != 0 {
+		t.Fatalf("clearing logs should leave only app.log and empty the in-memory list: %v (%v)", entries, err)
+	}
+	file, err := os.Stat(active)
+	if err != nil || file.Size() != 0 {
+		t.Fatalf("clearing logs should empty app.log: %v", err)
+	}
+}
+
 func TestNodeFileImportUsesSubscriptionSizeLimit(t *testing.T) {
 	a := testApp(t)
 	nodes := make([]profile.Node, 1000)

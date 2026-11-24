@@ -175,10 +175,9 @@ func (v *nativeView) syncPopup() {
 			} else if p.kind == "app-update" {
 				width, height = 460, 0
 				v.pack(box, v.dataLabel(p.releaseTag, "node-name"),
-					v.label("打开 GitHub 发布页查看发布说明和安装包。", "help"),
 					v.box("", true, 10, false, v.spacer(),
 						v.button("稍后", "secondary", false, false, u.closePopup),
-						v.button("查看 GitHub 发布页", "primary icon-external", false, false, func() { u.openExternal(p.link) })))
+						v.button("更新", "primary icon-external", false, false, func() { u.openExternal(p.link) })))
 			} else if p.kind == "about" {
 				u.status.Memory = u.backend.MemoryUsage()
 				width, height = 560, 400

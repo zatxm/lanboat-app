@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/zatxm/lumberjack/v2"
+	"github.com/zatxm/lumberjack/v26"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -69,8 +69,7 @@ func (l *Logs) List() []LogEntry {
 func NewLogger(dir string) (*zap.Logger, *Logs, func() error) {
 	logs := &Logs{entries: []LogEntry{}}
 	file := &lumberjack.Logger{Filename: filepath.Join(dir, "logs", "app.log"), MaxSize: 2, MaxBackups: 2, MaxAge: 0}
-	// Batch file writes: lumberjack stats the file on every write. The
-	// in-memory list for the UI stays immediate; Sync and close flush.
+	// Batch file writes while keeping the in-memory list for the UI immediate.
 	buffered := &zapcore.BufferedWriteSyncer{WS: zapcore.AddSync(file), Size: 256 << 10, FlushInterval: time.Second}
 	logs.file, logs.buffer = file, buffered
 	config := zap.NewProductionEncoderConfig()
