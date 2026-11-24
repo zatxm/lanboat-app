@@ -109,7 +109,7 @@ jobs:
 
   ios:
     needs: tests
-    runs-on: macos-15
+    runs-on: macos-26
     env:
       RELEASE_IOS_CERT: ${{ secrets.LANBOAT_IOS_P12_BASE64 }}
     steps:
