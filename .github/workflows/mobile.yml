@@ -46,7 +46,7 @@ jobs:
     needs: tests
     runs-on: ubuntu-24.04
     env:
-      RELEASE_APK_KEY: ${{ secrets.LANBOAT_ANDROID_KEYSTORE_BASE64 }}
+      HAS_ANDROID_SIGNING_KEY: ${{ secrets.LANBOAT_ANDROID_KEYSTORE_BASE64 != '' }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -59,31 +59,34 @@ jobs:
           distribution: temurin
           java-version: '21'
       - uses: android-actions/setup-android@v4
-      - name: Install Android build tools and emulator
+      - name: Install Android build tools
         run: |
           set -euo pipefail
-          sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;28.2.13676358' \
-            'emulator' 'system-images;android-36;google_apis;x86_64'
+          sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;28.2.13676358'
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/28.2.13676358" >> "$GITHUB_ENV"
-          printf 'KERNEL=="kvm", MODE="0666"\n' | sudo tee /etc/udev/rules.d/99-lanboat-kvm.rules
+      - name: Enable emulator acceleration
+        run: |
+          printf 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"\n' | sudo tee /etc/udev/rules.d/99-lanboat-kvm.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      - name: Build APK and test it on an emulator
+      - name: Build debug APK
         run: |
           set -euo pipefail
           export LANBOAT_VERSION="${MOBILE_VERSION#v}"
           bash scripts/build-mobile.sh android dist/Lanboat-android-debug.apk
-          echo no | avdmanager create avd --force --name lanboat-ci --package 'system-images;android-36;google_apis;x86_64'
-          adb start-server
-          "$ANDROID_HOME/emulator/emulator" -avd lanboat-ci -no-window -no-snapshot -no-audio \
-            -no-boot-anim -gpu swiftshader > "$RUNNER_TEMP/lanboat-emulator.log" 2>&1 &
-          trap 'adb emu kill || true' EXIT
-          timeout 260 adb wait-for-device
-          timeout 190 bash -c 'until [[ $(adb shell getprop sys.boot_completed | tr -d "\r") == 1 ]]; do sleep 2; done'
-          python3 scripts/test-android.py dist/Lanboat-android-debug.apk dist/Lanboat-Android-Emulator.png
+      - name: Test APK on the Android emulator
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: 36
+          target: default
+          arch: x86_64
+          emulator-options: -no-window -no-snapshot -no-audio -no-boot-anim -no-metrics -gpu swiftshader -camera-back none
+          script: |
+            python3 scripts/test-android.py dist/Lanboat-android-debug.apk dist/Lanboat-Android-Emulator.png --serial "emulator-$EMULATOR_PORT"
       - name: Build signed Android release
-        if: (github.event_name == 'release' || inputs.tag != '') && env.RELEASE_APK_KEY != ''
+        if: (github.event_name == 'release' || inputs.tag != '') && env.HAS_ANDROID_SIGNING_KEY == 'true'
         env:
+          RELEASE_APK_KEY: ${{ secrets.LANBOAT_ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEY_ALIAS: ${{ secrets.LANBOAT_ANDROID_KEY_ALIAS }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.LANBOAT_ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_PASSWORD: ${{ secrets.LANBOAT_ANDROID_KEY_PASSWORD }}

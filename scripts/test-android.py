@@ -7,6 +7,7 @@ import socket
 import socketserver
 import struct
 import subprocess
+import sys
 import threading
 import time
 import xml.etree.ElementTree as ET
@@ -35,38 +36,40 @@ def main():
     adb_cmd = ["adb"] + (["-s", args.serial] if args.serial else [])
 
     def adb(*command, data=None):
-        return subprocess.check_output([*adb_cmd, *command], input=data, timeout=30)
+        return subprocess.check_output([*adb_cmd, *command], input=data, stderr=subprocess.PIPE, timeout=30)
+
+    def read_device(*command):
+        try:
+            return adb(*command)
+        except subprocess.CalledProcessError as error:
+            if not re.search(rb"no devices/emulators found|device (?:'[^']+' )?(?:not found|offline)", error.stderr):
+                raise
+            print("ADB transport interrupted. Waiting for the emulator to reconnect.", flush=True)
+            adb("wait-for-device")
+            return adb(*command)
 
     def vpn_active():
-        output = adb("shell", "dumpsys", "connectivity")
+        output = read_device("shell", "dumpsys", "connectivity")
         return re.search(rb"VPN CONNECTED extra: VPN:org\.lanboat\.mobile[}\s]", output)
 
-    def connection_switch():
-        # Find the grey switch track on the toolbar regardless of the label width.
-        frame = adb("exec-out", "screencap")
-        width, height, pixel_format = struct.unpack_from("<3I", frame)
-        if (width, height, pixel_format) != (1080, 2340, 1):
-            return False
-        y = 145
-        row = len(frame) - width * height * 4 + y * width * 4
-        run = 0
-        for x in range(408):
-            offset = row + x * 4
-            red, green, blue = frame[offset:offset + 3]
-            run = run + 1 if red == green == blue == 229 else 0
-            if run == 24:
-                return str(x - run // 2), str(y)
-        return None
-
-    def permission_button():
-        xml = "/data/local/tmp/lanboat-permission.xml"
-        adb("shell", "uiautomator", "dump", xml)
-        tree = ET.fromstring(adb("shell", "cat", xml))
+    def control_position(matches):
+        xml = "/data/local/tmp/lanboat-ui.xml"
+        if b"dumped to" not in read_device("shell", "uiautomator", "dump", xml):
+            return None
+        tree = ET.fromstring(read_device("shell", "cat", xml))
         for node in tree.iter("node"):
-            if node.get("resource-id") == "android:id/button1":
-                left, top, right, bottom = map(int, re.findall(r"\d+", node.get("bounds")))
+            if matches(node) and node.get("enabled") == "true":
+                left, top, right, bottom = map(int, re.findall(r"-?\d+", node.get("bounds")))
                 return str((left + right) // 2), str((top + bottom) // 2)
         return None
+
+    def connection_switch(label):
+        return control_position(lambda node: node.get("package") == APP
+                                and node.get("class") == "android.widget.Switch"
+                                and node.get("content-desc") == label)
+
+    def permission_button():
+        return control_position(lambda node: node.get("resource-id") == "android:id/button1")
 
     class Page(http.server.BaseHTTPRequestHandler):
         def do_GET(self):
@@ -107,8 +110,6 @@ def main():
         with socketserver.ThreadingTCPServer(("127.0.0.1", 0), Socks) as proxy:
             for server in (page, proxy):
                 threading.Thread(target=server.serve_forever, daemon=True).start()
-            adb("shell", "wm", "size", "1080x2340")
-            adb("shell", "wm", "density", "420")
             adb("shell", "wm", "dismiss-keyguard")
             print(adb("install", "-r", args.apk).decode().strip(), flush=True)
             for mode in ("global", "rule"):
@@ -127,7 +128,7 @@ def main():
                 command = f"""run-as {APP} sh -c 'mkdir -p files/lanboat && cat > files/lanboat/config.json'"""
                 adb("shell", "-T", command, data=json.dumps(data).encode())
                 print(adb("shell", "am", "start", "-W", "-n", ACTIVITY).decode().strip(), flush=True)
-                switch = wait_for(connection_switch, "Android did not draw the connection switch")
+                switch = wait_for(lambda: connection_switch("Connect"), "Android did not expose the Connect switch")
                 adb("shell", "input", "tap", *switch)
                 if not vpn_active():
                     button = wait_for(lambda: "active" if vpn_active() else permission_button(),
@@ -141,11 +142,16 @@ def main():
                     raise RuntimeError("The HTTP response did not traverse the SOCKS5 proxy")
                 if mode == "rule":
                     with open(args.screenshot, "wb") as image:
-                        image.write(adb("exec-out", "screencap", "-p"))
+                        image.write(read_device("exec-out", "screencap", "-p"))
+                switch = wait_for(lambda: connection_switch("Disconnect"), "Android did not expose the Disconnect switch")
                 adb("shell", "input", "tap", *switch)
                 wait_for(lambda: not vpn_active(), "Disconnect did not remove the VPN")
                 print(f"Android VPN ({mode}) connected, forwarded HTTP through SOCKS5, and disconnected.", flush=True)
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except subprocess.CalledProcessError as error:
+        sys.stderr.buffer.write(error.stderr)
+        raise
