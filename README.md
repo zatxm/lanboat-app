@@ -24,7 +24,7 @@ While Lanboat is running, use its tray icon to show the main window or quit. The
 
 ### Mobile
 
-On Android 6 or later, install the APK from Releases. It supports 64-bit ARM and x86-64 devices. Import and select a node, choose **Rules** or **Global**, and approve the VPN prompt the first time you connect.
+On Android 6 or later, download `-Android-arm64.apk` for most phones or `-Android-x86_64.apk` for Intel or AMD devices and x86-64 emulators. Import and select a node, choose **Rules** or **Global**, and approve the VPN prompt the first time you connect.
 
 On iOS 15 or later, import and select a WireGuard node, connect in **Global** mode, and approve the VPN prompt. Install a signed build provisioned for your device or use TestFlight.
 

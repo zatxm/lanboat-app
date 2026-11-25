@@ -17,6 +17,12 @@ build=(go build -mod=readonly -trimpath -buildvcs=true -ldflags '-s -w')
 
 case $target in
 android)
+    arch=${ANDROID_ARCH:-arm64}
+    case $arch in
+        arm64) abi=arm64-v8a; triple=aarch64 ;;
+        amd64) abi=x86_64; triple=x86_64 ;;
+        *) printf 'Unsupported Android architecture: %s\n' "$arch" >&2; exit 2 ;;
+    esac
     sdk=${ANDROID_HOME:?set ANDROID_HOME}
     tools=${ANDROID_BUILD_TOOLS:-"$sdk/build-tools/36.0.0"}
     ndk=${ANDROID_NDK_HOME:-"$sdk/ndk/28.2.13676358"}
@@ -49,18 +55,11 @@ text = text.replace(callback, '''  @Override
 ''' + callback)
 path.write_text(text)
 PY
-    for arch in ${ANDROID_ARCHS:-arm64 amd64}; do
-        case $arch in
-            arm64) abi=arm64-v8a; triple=aarch64 ;;
-            amd64) abi=x86_64; triple=x86_64 ;;
-            *) exit 2 ;;
-        esac
-        lib="$tmp/apk/lib/$abi"
-        mkdir -p "$lib"
-        GOOS=android GOARCH="$arch" CGO_ENABLED=1 CC="$ndk/toolchains/llvm/prebuilt/$host/bin/$triple-linux-android23-clang" \
-            "${build[@]}" -buildmode=c-shared -o "$lib/libfego.so" ./cmd/lanboat-mobile
-        rm -f "$lib/libfego.h"
-    done
+    lib="$tmp/apk/lib/$abi"
+    mkdir -p "$lib"
+    GOOS=android GOARCH="$arch" CGO_ENABLED=1 CC="$ndk/toolchains/llvm/prebuilt/$host/bin/$triple-linux-android23-clang" \
+        "${build[@]}" -buildmode=c-shared -o "$lib/libfego.so" ./cmd/lanboat-mobile
+    rm -f "$lib/libfego.h"
     javac --release 8 -classpath "$jarfile" -d "$tmp/classes" \
         "$tmp"/src/org/fego/*.java mobile/android/org/lanboat/mobile/*.java
     jar cf "$tmp/classes.jar" -C "$tmp/classes" .
@@ -83,6 +82,10 @@ PY
     "$tools/zipalign" -P 16 -f 4 "$tmp/base.apk" "$tmp/aligned.apk"
     "$tools/apksigner" sign "${sign[@]}" --out "$tmp/signed.apk" "$tmp/aligned.apk"
     "$tools/apksigner" verify "$tmp/signed.apk"
+    if [[ $(unzip -Z1 "$tmp/signed.apk" 'lib/*/*.so') != "lib/$abi/libfego.so" ]]; then
+        printf 'APK does not contain exactly one native library for %s\n' "$abi" >&2
+        exit 1
+    fi
     cp "$tmp/signed.apk" "$out"
     ;;
 ios)

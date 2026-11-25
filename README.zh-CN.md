@@ -24,7 +24,7 @@ Linux 用户请以普通桌面用户从应用菜单启动。Lanboat 需要 X11 �
 
 ### 手机端
 
-Android 6及以上可安装Releases中的Android APK，支持64位ARM和x86-64设备。导入并选中节点后，选择**规则**或**全局**，首次连接时按系统提示授权VPN。
+Android 6及以上可安装 Releases 中对应架构的 APK。大多数手机选 `-Android-arm64.apk`，Intel 或 AMD 设备和 x86-64 模拟器选 `-Android-x86_64.apk`。导入并选中节点后，选择**规则**或**全局**，首次连接时按系统提示授权 VPN。
 
 iOS 15及以上可导入WireGuard节点，选中后使用**全局**连接，并按提示授权VPN。安装iOS包需要适用于该设备的签名构建，或通过TestFlight安装。
 

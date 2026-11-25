@@ -73,7 +73,7 @@ jobs:
         run: |
           set -euo pipefail
           export LANBOAT_VERSION="${MOBILE_VERSION#v}"
-          bash scripts/build-mobile.sh android dist/Lanboat-android-debug.apk
+          ANDROID_ARCH=amd64 bash scripts/build-mobile.sh android dist/Lanboat-android-debug.apk
       - name: Test APK on the Android emulator
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         with:
@@ -97,12 +97,13 @@ jobs:
           trap 'rm -f "$ANDROID_KEYSTORE"' EXIT
           umask 077
           printf '%s' "$RELEASE_APK_KEY" | base64 --decode > "$ANDROID_KEYSTORE"
-          bash scripts/build-mobile.sh android "dist/Lanboat-$LANBOAT_VERSION-Android.apk"
+          ANDROID_ARCH=arm64 bash scripts/build-mobile.sh android "dist/Lanboat-$LANBOAT_VERSION-Android-arm64.apk"
+          ANDROID_ARCH=amd64 bash scripts/build-mobile.sh android "dist/Lanboat-$LANBOAT_VERSION-Android-x86_64.apk"
       - uses: actions/upload-artifact@v6
         with:
           name: lanboat-android
           path: |
-            dist/*-Android.apk
+            dist/*-Android-*.apk
             dist/Lanboat-android-debug.apk
             dist/Lanboat-Android-Emulator.png
           if-no-files-found: error
@@ -196,7 +197,9 @@ jobs:
         run: |
           set -euo pipefail
           version="${MOBILE_VERSION#v}"
-          for package in "dist/Lanboat-$version-Android.apk" "dist/Lanboat-$version-iOS.ipa"; do
+          for package in "dist/Lanboat-$version-Android-arm64.apk" \
+                         "dist/Lanboat-$version-Android-x86_64.apk" \
+                         "dist/Lanboat-$version-iOS.ipa"; do
             if [[ -s $package ]]; then
               gh release upload "$MOBILE_VERSION" "$package" --repo "$GITHUB_REPOSITORY" --clobber
             else
