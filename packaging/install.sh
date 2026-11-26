@@ -12,7 +12,7 @@ install -m 755 lanboat lanboat-core uninstall.sh "$target/"
 for old in sing-box sing-box-vpn libcronet.so naive lanboat-server lanboat-tun lanboat-brook lanboat-lua lanboat-protocols lanboat-sudoku lanboat-hysteria1 lanboat-xray juicity-client lanboat-v2ray mihomo ck-client COPYING.xray COPYING.juicity COPYING.mihomo COPYING.cloak; do
   rm -f "$target/$old"
 done
-install -m 644 README.md README.zh-CN.md THIRD_PARTY.md LICENSE "$target/"
+install -m 644 README.md README.en.md THIRD_PARTY.md LICENSE "$target/"
 cp -R --remove-destination licenses "$target/"
 ln -sfn "$target/lanboat" "$prefix/bin/lanboat"
 install -m 644 lanboat.svg "$prefix/share/icons/hicolor/scalable/apps/lanboat.svg"

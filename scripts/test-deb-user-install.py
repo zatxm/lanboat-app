@@ -23,7 +23,7 @@ with tempfile.TemporaryDirectory(prefix='lanboat-deb-user-') as temporary:
     (payload/'licenses/fixture.txt').write_text('license version 1\n')
     (payload/'licenses/fixture.txt').chmod(0o444)
     binaries = ('lanboat', 'lanboat-core')
-    for name in (*binaries, 'COPYING.fixture', 'README.md', 'README.zh-CN.md', 'THIRD_PARTY.md', 'LICENSE'):
+    for name in (*binaries, 'COPYING.fixture', 'README.md', 'README.en.md', 'THIRD_PARTY.md', 'LICENSE'):
         (payload/name).write_text('fixture version 1\n')
     desktop_home = work/'Desktop User'
     data = desktop_home/'.lanboat/config.json'
@@ -79,7 +79,7 @@ exec "$@"
         assert (target/name).read_bytes() == (payload/name).read_bytes()
         assert (target/name).stat().st_uid == os.getuid()
     assert (prefix/'bin/lanboat').resolve() == target/'lanboat'
-    for name in ('README.md', 'README.zh-CN.md'):
+    for name in ('README.md', 'README.en.md'):
         assert (target/name).read_bytes() == (payload/name).read_bytes()
     menu = prefix/'share/applications/lanboat.desktop'
     assert f'Exec="{target}/lanboat"' in menu.read_text()
@@ -117,7 +117,7 @@ exec "$@"
         assert helper.isfile() and helper.uid == 0 and helper.mode == 0o755
         process.stdout.close()
         assert process.wait() == 0
-        for name in ('lanboat', 'lanboat-core', 'README.md', 'README.zh-CN.md'):
+        for name in ('lanboat', 'lanboat-core', 'README.md', 'README.en.md'):
             assert f'usr/share/lanboat/{name}' in names
         assert not any(Path(name).name in ('sing-box','sing-box-vpn','lanboat-tun','libcronet.so') for name in names)
         assert all(name.startswith('usr/share/lanboat/') or name == 'usr/libexec/lanboat-tun-worker' for name in names)

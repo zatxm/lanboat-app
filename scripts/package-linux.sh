@@ -16,7 +16,7 @@ trap 'rm -rf "$tmp"' EXIT
 name="lanboat-$version-linux-$arch"
 mkdir -p "$tmp/$name"
 install -m 755 build/bin/lanboat build/bin/lanboat-core packaging/install.sh packaging/uninstall.sh "$tmp/$name/"
-install -m 644 packaging/lanboat.svg README.md README.zh-CN.md THIRD_PARTY.md LICENSE "$tmp/$name/"
+install -m 644 packaging/lanboat.svg README.md README.en.md THIRD_PARTY.md LICENSE "$tmp/$name/"
 cp -R packaging/icons "$tmp/$name/icons"
 mkdir -p "$tmp/$name/licenses"
 install -m 644 packaging/COPYING.* "$tmp/$name/licenses/"

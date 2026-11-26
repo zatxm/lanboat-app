@@ -1,52 +1,52 @@
 # Lanboat
 
-**English** · [简体中文](README.zh-CN.md)
+**简体中文** · [English](README.en.md)
 
-Lanboat is a lightweight proxy client for Linux, Windows, macOS, Android, and iOS, designed to keep CPU and memory use low. Import proxy nodes or subscriptions, route traffic using rules or through the selected node, and manage DNS and connection logs in the app.
+Lanboat是一款轻量代理客户端，支持Linux、Windows、macOS、Android和iOS，设计上注重降低CPU和内存占用。你可以导入节点或订阅，选择按规则分流或全局转发，并在应用内管理DNS和连接日志。
 
-## Install
+## 安装
 
-Download the installer for your operating system and processor from [GitHub Releases](https://github.com/zatxm/lanboat-app/releases). Choose `amd64` or `x86_64` for Intel and AMD PCs, and `arm64` or `aarch64` for 64-bit ARM. On macOS, choose `arm64` for Apple silicon or `amd64` for Intel.
+前往 [GitHub Releases](https://github.com/zatxm/lanboat-app/releases)，选择对应系统和处理器的安装包。Intel 和 AMD 的 x86-64 电脑选 `amd64` 或 `x86_64`，64 位 ARM 电脑选 `arm64` 或 `aarch64`。Apple 芯片的 Mac 选 `arm64`，Intel 芯片的 Mac 选 `amd64`。
 
-| System | Package | Install |
+| 系统 | 安装包 | 安装方法 |
 | --- | --- | --- |
-| Ubuntu, Debian, Linux Mint | `.deb` | `sudo apt install ./filename.deb` |
-| Fedora | `.rpm` | `sudo dnf install ./filename.rpm` |
-| openSUSE | `.rpm` | `sudo zypper install ./filename.rpm` |
-| Arch Linux, Manjaro, EndeavourOS, Arch Linux ARM | `.pkg.tar.zst` | `sudo pacman -U ./filename.pkg.tar.zst` |
-| Other glibc-based Linux distributions | `-linux-*.tar.gz` | Extract the archive and run `./install.sh` as your desktop user |
-| Windows | `-setup.exe` | Run the installer and choose where to keep the app and your data |
-| macOS | `.pkg` | Open the installer, then launch Lanboat from Applications |
+| Ubuntu、Debian、Linux Mint | `.deb` | `sudo apt install ./文件名.deb` |
+| Fedora | `.rpm` | `sudo dnf install ./文件名.rpm` |
+| openSUSE | `.rpm` | `sudo zypper install ./文件名.rpm` |
+| Arch Linux、Manjaro、EndeavourOS、Arch Linux ARM | `.pkg.tar.zst` | `sudo pacman -U ./文件名.pkg.tar.zst` |
+| 其他使用 glibc 的 Linux 发行版 | `-linux-*.tar.gz` | 解压后以普通桌面用户运行 `./install.sh` |
+| Windows | `-setup.exe` | 运行安装程序，分别选择程序安装目录和数据目录 |
+| macOS | `.pkg` | 打开安装包，安装后从“应用程序”启动 Lanboat |
 
-On Linux, open Lanboat from your application menu as your desktop user. Lanboat needs an X11 or XWayland session and the X11 client library (`libX11.so.6`). File dialogs use Zenity. The archive installer expects you to install these dependencies with your distribution's package manager. Run `./uninstall.sh` from the extracted archive to remove that installation.
+Linux 用户请以普通桌面用户从应用菜单启动。Lanboat 需要 X11 或 XWayland 环境和 X11 客户端库（`libX11.so.6`），文件选择需要 Zenity。使用通用压缩包时，请通过系统的包管理器安装这些依赖。要卸载通用包，可在解压目录运行 `./uninstall.sh`。
 
-While Lanboat is running, use its tray icon to show the main window or quit. The icon appears in the Linux desktop panel, Windows notification area, or macOS menu bar. On GNOME, enable the AppIndicator extension if the panel does not show tray icons.
+运行期间，点击托盘菜单可以显示主窗口或退出。图标位于 Linux 桌面面板、Windows 通知区或 macOS 菜单栏。GNOME 面板若未显示托盘图标，请启用 AppIndicator 扩展。
 
-### Mobile
+### 手机端
 
-On Android 6 or later, download `-Android-arm64.apk` for most phones or `-Android-x86_64.apk` for Intel or AMD devices and x86-64 emulators. Import and select a node, choose **Rules** or **Global**, and approve the VPN prompt the first time you connect.
+Android 6及以上可安装 Releases 中对应架构的 APK。大多数手机选 `-Android-arm64.apk`，Intel 或 AMD 设备和 x86-64 模拟器选 `-Android-x86_64.apk`。导入并选中节点后，选择**规则**或**全局**，首次连接时按系统提示授权 VPN。
 
-On iOS 15 or later, import and select a WireGuard node, connect in **Global** mode, and approve the VPN prompt. Install a signed build provisioned for your device or use TestFlight.
+iOS 15及以上可导入WireGuard节点，选中后使用**全局**连接，并按提示授权VPN。安装iOS包需要适用于该设备的签名构建，或通过TestFlight安装。
 
-## Connect
+## 连接
 
-1. On **Home**, select **Import** to paste node links or a subscription URL, or to upload a configuration file. Use **Add** to enter a node manually.
-2. Select a node and choose a **Proxy mode**. **Rules** uses your routing configuration. **Global** sends traffic through the selected node.
-3. Turn on **Connect**. For apps that use a local proxy, use the address and port shown in **Settings → Proxy**.
+1. 在**首页**点击**导入**，粘贴节点链接或订阅地址，也可以上传配置文件。手动输入节点信息时点击**添加**。
+2. 选中节点并设置**代理模式**。**规则**按当前配置分流，**全局**通过选中节点转发。
+3. 打开**连接**。需要使用本地代理的应用，可填入**设置 → 代理**页面显示的地址和端口。
 
-Use **Latency test** to compare nodes. The automatic selection button in each node group toggles automatic selection for that group. When connecting, Lanboat tests the group containing the selected node and uses its fastest available node if auto select is on. Turning it on for the connected group runs a test immediately. On desktop, **Global + TUN** routes system TCP and UDP traffic through Lanboat. Use a platform installer and approve the system prompt when prompted. On Linux, this mode also requires a TUN device, `ip`, and `pkexec`.
+使用**延迟测试**比较节点。点击本地节点或订阅标题栏的闪电图标，可以单独开启该组的**自动选择**。连接时，如果当前所选节点的组已开启，就会选用组内延迟最低的可用节点。为正在连接的组开启后，会立即测速。**全局+TUN**可接管系统 TCP 和 UDP 流量。请使用对应平台的安装包，并在系统提示时授权。Linux 还需要 TUN 设备以及 `ip` 和 `pkexec` 命令。
 
-## Routing, DNS, and logs
+## 路由、DNS 和日志
 
-- In **Settings → Proxy**, you can allow LAN devices to connect, require a username and password, or configure an upstream proxy.
-- Open **Routing rules** in **Settings** to choose a routing configuration, manage custom rules, and adjust the region or update schedule. Subscription rules apply to the nodes from that subscription.
-- Open **DNS settings** to change resolvers, run a query, or open the DNS leak test.
-- In **Data**, turn on proxy or DNS logging and set an automatic cleanup interval. Proxy logs record each connection when it ends, with its destination, matched rule, outbound node, duration, and upload/download traffic; rejected or failed connections are recorded immediately, and plaintext HTTP requests also record the URL and method. HTTPS remains encrypted, so logs show the connection target for encrypted requests. The **App logs** tab shows Lanboat's own events, such as connecting, disconnecting, updates, and errors.
+- 在**设置 → 代理**可允许局域网设备连接、开启用户名和密码认证，或设置前置代理。
+- 在**设置 → 路由规则**切换规则配置、管理自定义规则、选择国家和地区或调整更新频率。订阅自带的规则只作用于该订阅的节点。
+- 在**DNS设置**修改解析器、运行查询诊断或打开 DNS 泄漏检测。
+- 在**数据**页可分别开启代理日志和 DNS 日志，并设置自动清理间隔。代理日志在每个连接结束时记录目标、匹配规则、出站节点、持续时间和上下行流量，被拒绝或失败的连接立即记录；明文 HTTP 请求另记 URL 和请求方法。HTTPS 保持加密，日志可查看加密连接的目标地址。日志页的**应用日志**显示 Lanboat 自身的事件，如连接、断开、更新与错误。
 
-## Back up and find your data
+## 备份与数据目录
 
-Choose **Back up now** in **Settings → Backups** to save the entire app configuration. Lanboat holds up to three backups. Delete one before creating another. Restoring also brings back the proxy mode, LAN sharing and credentials, upstream proxy, TCP/UDP preferences, speed and latency test settings, and logging preferences. When a rule database is installed, the backup includes it in a compressed archive. Use **Download backup** on a saved backup to move it to another computer. On that computer, choose **Import backup** and confirm to replace the current settings. Log history, caches, and live connections are excluded. Use Export nodes on Home to transfer just nodes and subscriptions. Backups may contain proxy credentials. If a node refers to an external certificate by path, copy that file to the corresponding path on the new device.
+在**设置 → 备份**点击「立即备份」可保存整份应用配置，最多保留三份。已满时须先删除一份才能再创建。还原时，代理模式、网络共享与认证、前置代理、TCP/UDP、测速和延迟测试等设置也会一起恢复。日志开关和保留天数会恢复；历史日志、缓存和当前连接不会随备份迁移。已安装的规则库会随完整备份一起压缩。点击备份记录的「下载备份」可保存迁移文件。在另一台电脑点击「导入备份」，确认后恢复设置。首页的「导出节点」可单独迁移节点与订阅。备份可能包含代理凭据，请妥善保管。若节点通过路径引用外部证书，换机时还需将证书放到对应路径。
 
-Use **Settings → About** to open the data folder. The default is `~/.lanboat` on Linux and macOS. Windows uses the folder chosen during installation, defaulting to `%USERPROFILE%\.lanboat`. Uninstalling the app keeps this folder.
+在**设置 → 关于**可打开数据目录。Linux 和 macOS 默认使用 `~/.lanboat`。Windows 使用安装时选择的目录，默认是 `%USERPROFILE%\.lanboat`。卸载会保留数据目录。
 
-[Third-party notices](THIRD_PARTY.md)
+[第三方许可说明](THIRD_PARTY.md)
