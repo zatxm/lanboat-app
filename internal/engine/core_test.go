@@ -175,14 +175,22 @@ func TestUnifiedProtocolRoundTrips(t *testing.T) {
 	cert.Close()
 	key, _ := x509.MarshalPKCS8PrivateKey(pair.PrivateKey)
 	tlsServer := map[string]any{"enabled": true, "certificate": []string{string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: pair.Certificate[0]}))}, "key": []string{string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: key}))}}
-	for _, kind := range []string{"ss", "ssr", "socks5", "socks5s", "http", "https", "vmess", "vless", "trojan", "hysteria", "hysteria2", "tuic", "juicity", "anytls", "snell", "relay", "brook"} {
-		t.Run(kind, func(t *testing.T) {
+	for _, label := range []string{"ss", "ssr", "socks5", "socks5s", "http", "https", "vmess", "vless", "trojan", "hysteria", "hysteria2", "tuic", "juicity", "anytls", "snell", "snell/default", "snell/unshaped", "snell/unsafe-raw", "relay", "brook"} {
+		t.Run(label, func(t *testing.T) {
+			kind, mode, _ := strings.Cut(label, "/")
 			p, _ := profile.ProtocolByID(kind)
 			n := protocolFixture(t, p)
 			n.SetOption("username", "client")
 			n.SetOption("skip-cert-verify", true)
 			if kind == "vmess" || kind == "vless" {
 				n.SetOption("tls", false)
+			}
+			if mode != "" {
+				n.Password = "fixture-snell-psk"
+				n.SetOption("version", "6")
+				n.SetOption("mode", mode)
+				n.SetOption("mux", true)
+				n.SetOption("idle-timeout", "30")
 			}
 			out := coreOutbound(n)
 			typ := out["type"].(string)
@@ -196,6 +204,12 @@ func TestUnifiedProtocolRoundTrips(t *testing.T) {
 			for _, field := range []string{"protocol", "protocol_param", "obfs", "obfs_param", "version", "up_mbps", "down_mbps"} {
 				if v, ok := out[field]; ok {
 					in[field] = v
+				}
+			}
+			if mode != "" {
+				in["version"], in["mode"] = "6", mode
+				if out["idle_session_timeout"] != "30s" {
+					t.Fatal("Snell v6 idle timeout did not reach core options")
 				}
 			}
 			if out["tls"] != nil {
@@ -234,6 +248,33 @@ func TestUnifiedProtocolRoundTrips(t *testing.T) {
 			resp.Body.Close()
 			if err != nil || string(body) != "native payload" {
 				t.Fatal(string(body), err)
+			}
+			if mode != "" {
+				udp, err := net.ListenPacket("udp", "127.0.0.1:0")
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer udp.Close()
+				go func() {
+					buf := make([]byte, 64)
+					if n, addr, err := udp.ReadFrom(buf); err == nil {
+						_, _ = udp.WriteTo(buf[:n], addr)
+					}
+				}()
+				conn, err := probe.runtime.Dial(ctx, "udp", udp.LocalAddr().String())
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer conn.Close()
+				conn.SetDeadline(time.Now().Add(2 * time.Second))
+				if _, err := conn.Write([]byte("snell datagram")); err != nil {
+					t.Fatal(err)
+				}
+				reply := make([]byte, 64)
+				count, err := conn.Read(reply)
+				if err != nil || string(reply[:count]) != "snell datagram" {
+					t.Fatalf("Snell v6 UDP reply %q: %v", reply[:count], err)
+				}
 			}
 		})
 	}

@@ -197,6 +197,10 @@ func knownNodeFields(n Node) []Field {
 			node.SetOption("network", "ws")
 			node.SetOption("lua-file", "custom")
 			fields = append(fields, extraNodeFields(node)...)
+			if p.ID == "snell" {
+				node.SetOption("version", "6")
+				fields = append(fields, extraNodeFields(node)...)
+			}
 			for _, network := range []string{"http", "mkcp", "grpc", "quic", "xhttp"} {
 				node.SetOption("network", network)
 				fields = append(fields, transportNodeFields(node)...)

@@ -1,6 +1,9 @@
 package profile
 
-import "testing"
+import (
+	"slices"
+	"testing"
+)
 
 func TestExtraNodeForms(t *testing.T) {
 	for _, kind := range []string{"snell", "mieru", "brook", "lua"} {
@@ -16,7 +19,7 @@ func TestExtraNodeForms(t *testing.T) {
 			t.Fatal(kind, "TFO default")
 		}
 		if kind == "snell" {
-			if fields["version"].Default != "1" || len(fields["version"].Choices) != 5 || fields["udp"].Default != "false" || fields["idle-timeout"].Placeholder != "30,30,1" || fields["idle-timeout"].Default != "" {
+			if fields["version"].Default != "1" || !slices.Contains(fields["version"].Choices, "6") || fields["udp"].Default != "false" || fields["idle-timeout"].Placeholder != "30,30,1" || fields["idle-timeout"].Default != "" {
 				t.Fatal("Snell defaults")
 			}
 			for _, obfs := range []string{"http", "tls"} {
@@ -95,9 +98,43 @@ func TestSnellAndLuaWireCombinations(t *testing.T) {
 			t.Fatal("legacy version cannot reuse", version)
 		}
 	}
+	for _, uri := range []string{
+		"snell://short@example.com:443?version=6",
+		"snell://fixture-snell-psk@example.com:443?version=6&obfs-opts.mode=http",
+		"snell://fixture-snell-psk@example.com:443?version=6&mode=unknown",
+		"snell://fixture-snell-psk@example.com:443?version=5&mode=unshaped",
+	} {
+		if _, err := ParseURI(uri); err == nil {
+			t.Error("accepted invalid Snell options")
+		}
+	}
 	n := Node{Type: "lua"}
 	n.SetOption("cipher", "aes-256-gcm")
 	if _, err := n.LuaScript(); err == nil {
 		t.Fatal("Lightsword does not define AEAD record framing")
+	}
+}
+
+func TestSnellV6ImportAndShare(t *testing.T) {
+	for _, tc := range []struct{ name, input string }{
+		{"URI", "snell://example.com:8388?psk=fixture-snell-psk&version=6&mode=unshaped&mux=true#fixture"},
+		{"Surge", "[Proxy]\nfixture = snell, example.com, 8388, psk=fixture-snell-psk, version=6, mode=unshaped, reuse=true"},
+		{"Clash", "proxies:\n  - {name: fixture, type: snell, server: example.com, port: 8388, psk: fixture-snell-psk, version: 6, mode: unshaped, mux: true}"},
+		{"Core", `{"outbounds":[{"type":"snell","tag":"fixture","server":"example.com","server_port":8388,"password":"fixture-snell-psk","version":"6","mode":"unshaped","multiplex":{"enabled":true}}]}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			nodes, err := ParseImport(tc.input)
+			if err != nil || len(nodes) != 1 {
+				t.Fatalf("imported %d nodes: %v", len(nodes), err)
+			}
+			n, err := ParseURI(ShareURI(nodes[0]))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if n.Kind() != "snell" || n.Password != "fixture-snell-psk" || n.TextOption("version") != "6" ||
+				n.TextOption("mode") != "unshaped" || n.TextOption("mux") != "true" {
+				t.Fatal("lost Snell v6 settings during import or share")
+			}
+		})
 	}
 }

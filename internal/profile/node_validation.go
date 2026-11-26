@@ -67,11 +67,22 @@ func validateNodeOptions(n Node) error {
 	}
 	if n.Kind() == "snell" {
 		version := n.EffectiveOption("version", "1")
-		if (version == "4" || version == "5") && n.TextOption("obfs-opts.mode") == "tls" {
+		obfs := n.TextOption("obfs-opts.mode")
+		if version == "6" {
+			if len(n.Password) < 12 || len(n.Password) > 255 {
+				return fmt.Errorf("Snell v6 密码需为 12–255 字节")
+			}
+			if (obfs != "" && obfs != "none") || n.TextOption("obfs-opts.host") != "" || n.TextOption("obfs-opts.path") != "" {
+				return fmt.Errorf("Snell v6 使用模式选项，旧版混淆仅适用于 Snell 1–5")
+			}
+		} else if n.TextOption("mode") != "" {
+			return fmt.Errorf("此模式仅适用于 Snell v6")
+		}
+		if (version == "4" || version == "5") && obfs == "tls" {
 			return fmt.Errorf("Snell 4/5 不支持 TLS 混淆，请改用 HTTP 混淆或 Shadow-TLS 插件")
 		}
 		if (version == "1" || version == "3") && n.TextOption("mux") == "true" {
-			return fmt.Errorf("Snell 1/3 不支持连接复用，请使用版本 2、4 或 5")
+			return fmt.Errorf("Snell 1/3 不支持连接复用，请使用版本 2 或 4–6")
 		}
 	}
 	if n.Kind() == "vless" {

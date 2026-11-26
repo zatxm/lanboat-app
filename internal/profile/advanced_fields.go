@@ -119,6 +119,9 @@ func (n Node) EffectiveOption(key, fallback string) string {
 
 func (n Node) IdleTimeout() (check, timeout, minimum int, err error) {
 	values := strings.Split(n.EffectiveOption("idle-timeout", "30,30,1"), ",")
+	if n.Kind() == "snell" && len(values) == 1 {
+		values = []string{"30", values[0], "1"}
+	}
 	if len(values) != 3 {
 		return 0, 0, 0, fmt.Errorf("空闲超时需为检查间隔,超时秒数,最少空闲连接数")
 	}

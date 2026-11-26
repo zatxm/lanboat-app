@@ -70,7 +70,7 @@ var Protocols = []Protocol{
 	{"tuic", "TUIC", "lanboat-allinone", combine([]Field{secret("uuid", "UUID", false), secret("token", "TUIC v4 Token", false), choose("congestion-controller", "拥塞控制", "cubic", "cubic", "bbr", "new_reno"), choose("udp-relay-mode", "UDP 转发方式", "native", "native", "quic")}, tlsFields)},
 	{"ssh", "SSH", "lanboat-allinone", []Field{f("username", "用户名", true), multilineSecret("private-key", "私钥 PEM（新输入可见，保存后隐藏）", false), secret("private-key-passphrase", "私钥口令", false), f("host-key", "主机公钥（推荐填写）", false)}},
 	{"wireguard", "WireGuard", "lanboat-allinone", []Field{secret("private-key", "本地私钥", true), f("public-key", "对端公钥", true), secret("pre-shared-key", "预共享密钥", false), f("ip", "本地 IPv4", true), f("ipv6", "本地 IPv6", false), f("reserved", "Reserved（如 1,2,3）", false), number("mtu", "MTU", "1408")}},
-	{"snell", "Snell", "lanboat-allinone", []Field{choose("version", "协议版本", "3", "1", "2", "3", "4", "5"), choose("obfs-opts.mode", "混淆方式", "", "", "http", "tls"), f("obfs-opts.host", "混淆 Host", false)}},
+	{"snell", "Snell", "lanboat-allinone", nil},
 	{"mieru", "Mieru", "lanboat-allinone", []Field{f("username", "用户名", true), choose("transport", "传输协议", "TCP", "TCP", "UDP"), f("port-range", "端口范围", false), choose("multiplexing", "多路复用", "MULTIPLEXING_LOW", "MULTIPLEXING_OFF", "MULTIPLEXING_LOW", "MULTIPLEXING_MIDDLE", "MULTIPLEXING_HIGH")}},
 	{"relay", "Relay", "lanboat-allinone", []Field{f("username", "用户名", false)}},
 	{"trusttunnel", "TrustTunnel", "lanboat-allinone", combine([]Field{f("username", "用户名", true), choose("quic", "QUIC", "false", "false", "true")}, tlsFields)},

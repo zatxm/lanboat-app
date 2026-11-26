@@ -320,8 +320,12 @@ func parseProxyTextNode(line string) (Node, error) {
 				n.SetOption("obfs-opts.path", options["obfs-uri"])
 			}
 		}
-		if kind == "snell" && options["version"] == "" {
-			n.SetOption("version", "4")
+		if kind == "snell" {
+			if options["version"] == "" {
+				n.SetOption("version", "4")
+			}
+			put(&n, "mode", options["mode"])
+			put(&n, "mux", options["reuse"])
 		}
 	}
 	if secret := options["shadow-tls-password"]; secret != "" {

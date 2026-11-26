@@ -202,6 +202,13 @@ func (u *UI) changeSSChoice(key, value string) {
 	} else {
 		u.draft.SetOption(key, value)
 	}
+	if u.draft.Kind() == "snell" && key == "version" {
+		if value == "6" {
+			u.draft.SetOption("obfs-opts", nil)
+		} else {
+			u.draft.SetOption("mode", "")
+		}
+	}
 	for _, field := range profile.NodeFields(u.draft) {
 		text := u.draft.TextOption(field.Key)
 		if field.Key == "plugin" {

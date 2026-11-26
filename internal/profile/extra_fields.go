@@ -18,15 +18,24 @@ func extraNodeFields(n Node) []Field {
 	case "tailscale":
 		fields = []Field{secret("auth-key", "密钥", true), f("exit-node", "节点", true), f("control-url", "控制服务 URL", false)}
 	case "snell":
-		fields = []Field{choose("version", "版本", "1", "1", "2", "3", "4", "5"), choose("obfs-opts.mode", "混淆", "none", "none", "http", "tls")}
-		switch n.TextOption("obfs-opts.mode") {
-		case "http":
-			fields = append(fields, withGroup("混淆设置", f("obfs-opts.host", "Host", false), textDefault("obfs-opts.path", "路径", "/"))...)
-		case "tls":
-			fields = append(fields, withGroup("混淆设置", f("obfs-opts.host", "Host", false))...)
+		fields = []Field{choose("version", "版本", "1", "1", "2", "3", "4", "5", "6")}
+		timeout := "30,30,1"
+		if n.EffectiveOption("version", "1") == "6" {
+			timeout = "30"
+			mode := choose("mode", "Snell v6 模式", "default", "default", "unshaped", "unsafe-raw")
+			mode.Hint = "模式须与服务端一致。unsafe-raw 为明文且不验证密码。"
+			fields = append(fields, mode)
+		} else {
+			fields = append(fields, choose("obfs-opts.mode", "混淆", "none", "none", "http", "tls"))
+			switch n.TextOption("obfs-opts.mode") {
+			case "http":
+				fields = append(fields, withGroup("混淆设置", f("obfs-opts.host", "Host", false), textDefault("obfs-opts.path", "路径", "/"))...)
+			case "tls":
+				fields = append(fields, withGroup("混淆设置", f("obfs-opts.host", "Host", false))...)
+			}
 		}
 		fields = append(fields, pluginFields(n)...)
-		fields = append(fields, boolean("mux", "多路复用", "false"), placeholder(f("idle-timeout", "空闲超时", false), "30,30,1"), boolean("tfo", "TCP 快速打开", "false"), boolean("udp", "UDP 转发", "false"))
+		fields = append(fields, boolean("mux", "多路复用", "false"), placeholder(f("idle-timeout", "空闲超时", false), timeout), boolean("tfo", "TCP 快速打开", "false"), boolean("udp", "UDP 转发", "false"))
 	case "mieru":
 		pattern := f("traffic-pattern", "流量特征", false)
 		pattern.Placeholder = "Base64"

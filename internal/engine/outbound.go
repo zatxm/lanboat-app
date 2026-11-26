@@ -89,12 +89,7 @@ func coreOutbound(n profile.Node) map[string]any {
 		out["congestion_control"] = fallbackValue(n.TextOption("congestion-controller"), "cubic")
 		out["udp_relay_mode"] = fallbackValue(n.TextOption("udp-relay-mode"), "native")
 	case "snell":
-		out["version"] = 4
-		out["psk"] = n.Password
-		if mode := n.TextOption("obfs-opts.mode"); mode != "" {
-			out["obfs_mode"] = mode
-			out["obfs_host"] = n.TextOption("obfs-opts.host")
-		}
+		out["password"] = n.Password
 	case "ssh":
 		out["user"] = n.TextOption("username")
 		out["password"] = n.Password
@@ -209,7 +204,11 @@ func coreOutbound(n profile.Node) map[string]any {
 		}
 	}
 	if n.TextOption("mux") == "true" {
-		out["multiplex"] = map[string]any{"enabled": true, "protocol": "smux", "max_connections": 4, "min_streams": 4, "max_streams": 16}
+		if n.Kind() == "snell" {
+			out["multiplex"] = map[string]any{"enabled": true}
+		} else {
+			out["multiplex"] = map[string]any{"enabled": true, "protocol": "smux", "max_connections": 4, "min_streams": 4, "max_streams": 16}
+		}
 	}
 	coreOptions(n, out)
 	return out

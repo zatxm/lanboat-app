@@ -24,6 +24,8 @@ github.com/zatxm/lanboat-allinone/v26 v26.1122.170450 h1:b+j2Sp5JURiXkFuxiQeNxXf
 github.com/zatxm/lanboat-allinone/v26 v26.1122.170450/go.mod h1:/f7J3o21jMM0UPDkUgtpxfUhfkEfqLKlvZJMr5ASElI=
 github.com/zatxm/lanboat-allinone/v26 v26.1124.181255 h1:HiD9LGNXsDZVslekzHSqkwttLFsKlPr/Pjtl692GGJs=
 github.com/zatxm/lanboat-allinone/v26 v26.1124.181255/go.mod h1:/f7J3o21jMM0UPDkUgtpxfUhfkEfqLKlvZJMr5ASElI=
+github.com/zatxm/lanboat-allinone/v26 v26.1126.112830 h1:s4DQS3Q5HenY2UdO1c+sJfEZ+n/tw4fb8jZ8m8+RJjU=
+github.com/zatxm/lanboat-allinone/v26 v26.1126.112830/go.mod h1:/f7J3o21jMM0UPDkUgtpxfUhfkEfqLKlvZJMr5ASElI=
 github.com/zatxm/lumberjack/v26 v26.0.0 h1:h/sqm076bXqUpkiHcEc5x1QO1eOdNFUxgRC/8m8CTkU=
 github.com/zatxm/lumberjack/v26 v26.0.0/go.mod h1:mHVhUHAWGadHj/g1obAUvRvZpV+552l+GM9z3dq7eh8=
 go.uber.org/goleak v1.3.0 h1:2K3zAYmnTNqV73imy9J1T3WC+gmCePx2hEGkimedGto=

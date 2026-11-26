@@ -318,6 +318,19 @@ func TestNativeWindowDetailedProtocolForms(t *testing.T) {
 					t.Fatal("Snell conditional path")
 				}
 			}
+			v.inputs["opt.obfs-opts.mode"].edit("http")
+			pump()
+			v.inputs["opt.version"].edit("6")
+			pump()
+			if v.inputs["opt.mode"] == nil || u.field("opt.mode").Text() != "default" || v.inputs["opt.obfs-opts.mode"] != nil || u.draft.Option("obfs-opts") != nil {
+				t.Fatal("Snell v6 mode or legacy obfs state")
+			}
+			v.inputs["opt.mode"].edit("unshaped")
+			v.inputs["opt.version"].edit("5")
+			pump()
+			if v.inputs["opt.mode"] != nil || u.draft.TextOption("mode") != "" || v.inputs["opt.obfs-opts.mode"] == nil {
+				t.Fatal("Snell legacy form retains v6 options")
+			}
 		}
 		if kind == "brook" {
 			v.inputs["opt.network"].edit("wss")

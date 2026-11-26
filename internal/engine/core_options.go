@@ -122,11 +122,11 @@ func coreOptions(n profile.Node, out map[string]any) {
 			out["token"] = n.EffectiveOption("token", n.Password)
 		}
 	case "snell":
-		out["version"] = n.EffectiveOption("version", "1")
-		delete(out, "psk")
-		delete(out, "obfs_mode")
-		delete(out, "obfs_host")
-		if mode := text("obfs-opts.mode"); mode != "" && mode != "none" {
+		version := n.EffectiveOption("version", "1")
+		out["version"] = version
+		if version == "6" {
+			out["mode"] = n.EffectiveOption("mode", "default")
+		} else if mode := text("obfs-opts.mode"); mode != "" && mode != "none" {
 			out["obfs"] = map[string]any{"type": mode, "host": text("obfs-opts.host"), "path": n.EffectiveOption("obfs-opts.path", "/")}
 		}
 	case "ssh":
@@ -213,7 +213,10 @@ func coreOptions(n profile.Node, out map[string]any) {
 	} else if text("congestion-controller") != "" {
 		out["congestion_control"] = text("congestion-controller")
 	}
-	if text("idle-timeout") != "" {
+	if n.Kind() == "snell" && text("idle-timeout") != "" {
+		_, timeout, _, _ := n.IdleTimeout()
+		out["idle_session_timeout"] = strconv.Itoa(timeout) + "s"
+	} else if text("idle-timeout") != "" {
 		parts := strings.Split(text("idle-timeout"), ",")
 		out["idle_session_timeout"] = parts[0] + "s"
 		if len(parts) > 1 {

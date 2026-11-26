@@ -243,10 +243,14 @@ func parseOutboundConfig(doc map[string]any, outbounds []any, limit int, rules *
 }
 
 func parseSingOutbound(o map[string]any, name string) (Node, error) {
-	if err := unsupportedKeys(o, "type", "tag", "server", "server_port", "password", "method", "uuid", "security", "alter_id", "flow", "username", "congestion_control", "up_mbps", "down_mbps", "plugin", "tls", "transport", "obfs"); err != nil {
+	kind := strings.ToLower(mapString(o, "type"))
+	allowed := []string{"type", "tag", "server", "server_port", "password", "method", "uuid", "security", "alter_id", "flow", "username", "congestion_control", "up_mbps", "down_mbps", "plugin", "tls", "transport", "obfs"}
+	if kind == "snell" {
+		allowed = append(allowed, "version", "mode", "multiplex")
+	}
+	if err := unsupportedKeys(o, allowed...); err != nil {
 		return Node{}, err
 	}
-	kind := strings.ToLower(mapString(o, "type"))
 	switch kind {
 	case "shadowsocks":
 		kind = "ss"
@@ -269,6 +273,16 @@ func parseSingOutbound(o map[string]any, name string) (Node, error) {
 	n := Node{ID: ID(), Type: kind, Name: name, Server: server, Port: port, Password: mapString(o, "password")}
 	if kind == "ss" {
 		n.Method = mapString(o, "method")
+	}
+	if kind == "snell" {
+		put(&n, "version", o["version"])
+		put(&n, "mode", o["mode"])
+		if mux := mapObject(o, "multiplex"); mux != nil {
+			if err := unsupportedKeys(mux, "enabled"); err != nil {
+				return Node{}, err
+			}
+			put(&n, "mux", mux["enabled"])
+		}
 	}
 	for source, dest := range map[string]string{"uuid": "uuid", "security": "cipher", "alter_id": "alterId", "flow": "flow", "username": "username", "congestion_control": "congestion-controller", "up_mbps": "up", "down_mbps": "down", "plugin": "plugin"} {
 		if source == "plugin" {

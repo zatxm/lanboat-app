@@ -185,6 +185,9 @@ func ParseURI(raw string) (Node, error) {
 		}
 	}
 	q := u.Query()
+	if kind == "snell" && n.Password == "" {
+		n.Password = q.Get("psk")
+	}
 	mapping := map[string]string{"sni": "sni", "peer": "sni", "allowInsecure": "skip-cert-verify", "insecure": "skip-cert-verify", "allow-insecure": "skip-cert-verify", "fp": "client-fingerprint", "fingerprint": "client-fingerprint", "pbk": "reality-opts.public-key", "sid": "reality-opts.short-id", "type": "network", "host": "transport-host", "path": "transport-path", "serviceName": "service-name", "flow": "flow", "alpn": "alpn", "publickey": "public-key", "public-key": "public-key", "private-key": "private-key", "presharedkey": "pre-shared-key", "pre-shared-key": "pre-shared-key", "address": "ip", "ip": "ip", "ipv6": "ipv6", "reserved": "reserved", "mtu": "mtu", "obfs": "obfs", "obfs-password": "obfs-password", "obfsParam": "obfs", "pinSHA256": "tls-sha256", "upmbps": "up", "downmbps": "down", "up": "up", "down": "down", "auth": "auth-str", "auth_str": "auth-str", "allow_insecure": "skip-cert-verify", "pinned_certchain_sha256": "pinned-certchain-sha256", "protocol": "protocol", "protocol-param": "protocol-param", "obfs-param": "obfs-param", "version": "version", "ports": "ports", "username": "username", "congestion_control": "congestion-controller", "congestion-controller": "congestion-controller", "udp_relay_mode": "udp-relay-mode", "udp-relay-mode": "udp-relay-mode", "ss-method": "ss-method", "ss-password": "ss-password", "psk": "psk", "transport": "transport", "multiplexing": "multiplexing", "key": "key", "aead-method": "aead-method", "table-type": "table-type", "http-mask": "http-mask", "uri": "uri", "cookie": "cookie", "authgroup": "authgroup"}
 	if kind == "shadowtls" && !q.Has("ss-method") && !q.Has("ss-password") {
 		for _, key := range []string{"host", "sni", "peer"} {
@@ -236,6 +239,9 @@ func ParseURI(raw string) (Node, error) {
 		}
 		if key == "password" {
 			n.Password = value
+			continue
+		}
+		if kind == "snell" && key == "psk" {
 			continue
 		}
 		if dest := mapping[key]; dest != "" {
