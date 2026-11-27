@@ -18,8 +18,8 @@ github.com/stretchr/testify v1.12.1 h1:EuwCh5fleGS7H32xRwO3wRGT7DxrDhLAT6FF8MpWD
 github.com/stretchr/testify v1.12.1/go.mod h1:MDEgiDPPsNp5cuIrHPPCyornHKgEVbtFUmoNlxoYthg=
 github.com/xyproto/randomstring v1.0.5 h1:YtlWPoRdgMu3NZtP45drfy1GKoojuR7hmRcnhZqKjWU=
 github.com/xyproto/randomstring v1.0.5/go.mod h1:rgmS5DeNXLivK7YprL0pY+lTuhNQW3iGxZ18UQApw/E=
-github.com/zatxm/fego/v26 v26.1126.190433 h1:ERQHwDHoHMzcqJIyhQI01l6sjo1qWn0OLDsJM2QiSuA=
-github.com/zatxm/fego/v26 v26.1126.190433/go.mod h1:Voz4fIPDGWp1CoEO5EraztTosBb8zfSOTPXyFskJ1+A=
+github.com/zatxm/fego/v26 v26.1127.164214 h1:9DqrwN1HnaFVW9BpITjnGXebSuO3ZHRWp3ipKH7pKvk=
+github.com/zatxm/fego/v26 v26.1127.164214/go.mod h1:Voz4fIPDGWp1CoEO5EraztTosBb8zfSOTPXyFskJ1+A=
 github.com/zatxm/lanboat-allinone/v26 v26.1126.112830 h1:s4DQS3Q5HenY2UdO1c+sJfEZ+n/tw4fb8jZ8m8+RJjU=
 github.com/zatxm/lanboat-allinone/v26 v26.1126.112830/go.mod h1:/f7J3o21jMM0UPDkUgtpxfUhfkEfqLKlvZJMr5ASElI=
 github.com/zatxm/lumberjack/v26 v26.0.0 h1:h/sqm076bXqUpkiHcEc5x1QO1eOdNFUxgRC/8m8CTkU=

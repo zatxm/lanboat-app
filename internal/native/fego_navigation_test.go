@@ -2,6 +2,7 @@ package native
 
 import (
 	"fmt"
+	"path/filepath"
 	"testing"
 
 	"github.com/zatxm/fego/v26"
@@ -64,7 +65,7 @@ func TestFegoHomeUsesViewport(t *testing.T) {
 	for _, size := range []struct {
 		width, height int
 		mobile        bool
-	}{{1160, 800, false}, {800, 560, false}, {390, 620, true}} {
+	}{{1160, 800, false}, {minWindowWidth, minWindowHeight, false}, {800, 560, false}, {390, 620, true}} {
 		t.Run(fmt.Sprintf("%dx%d", size.width, size.height), func(t *testing.T) {
 			u := testUI(t)
 			u.state.Config.Subscriptions = []profile.Subscription{{ID: "feed", Name: "Feed"}}
@@ -147,35 +148,77 @@ func TestFegoHomeUsesViewport(t *testing.T) {
 	}
 }
 
-func TestFegoHomeRendersNodeFlagOutsideName(t *testing.T) {
+func TestFegoHomeDisplaysOnlySavedNodeFlags(t *testing.T) {
 	u := testUI(t)
-	const name = "🇭🇰 【亚洲】香港01 | V6"
-	const host = "192.0.2.1"
-	u.state.Config.Nodes = []profile.Node{{ID: "hk", Name: name, Server: host, Type: "trojan"}}
+	u.flagsEnabled = true
+	u.state.Config.Nodes = []profile.Node{
+		{ID: "saved", Name: "Tokyo", Server: "8.8.8.8", Flag: "🇯🇵", Type: "trojan"},
+		{ID: "missing", Name: "🇭🇰 Hong Kong", Server: "8.8.8.8", Type: "trojan"},
+	}
 	v, err := newView(u)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer v.dispose()
 	v.render()
-	var title, flag *widget
-	for _, w := range v.widgets {
-		if hasClass(w.classes, "node-title") {
-			title = w
-		}
-		if hasClass(w.classes, "country-flag") {
-			flag = w
-		}
-	}
-	if title == nil || title.pointer.Text() != "【亚洲】香港01 | V6" {
-		t.Fatal("node title should show the remark without the flag glyphs")
-	}
-	if flag == nil || flag.value != "hk" {
-		t.Fatal("node title's flag should be used when the server region is unknown")
-	}
-	u.flags[host] = flagEntry{code: "jp"}
 	v.refresh()
-	if flag.value != "jp" || u.state.Config.Nodes[0].Name != name {
-		t.Fatal("GeoIP should control the icon without changing the original remark")
+	v.tester.Step()
+	flags := 0
+	for _, w := range v.widgets {
+		if hasClass(w.classes, "country-flag") {
+			flags++
+			if w.tooltip != "JP" || w.update != nil {
+				t.Fatal("flag should render from the saved value only")
+			}
+		}
+		if hasClass(w.classes, "node-title") && w.pointer.Text() == "🇭🇰 Hong Kong" {
+			t.Fatal("node title should not render the flag as text")
+		}
+	}
+	if flags != 1 {
+		t.Fatalf("expected one saved flag, got %d", flags)
+	}
+}
+
+func TestNodeEditorSavesFlagWhenAddressChanges(t *testing.T) {
+	u := testUI(t)
+	u.flagsEnabled = true
+	u.editNode(profile.Node{})
+	u.field("name").SetText("Test node")
+	u.field("server").SetText("8.8.8.8")
+	u.field("password").SetText("fixture")
+	u.saveEditor()
+	waitJob(t, u)
+	path := filepath.Join(u.state.DataDir, "config.json")
+	stored, err := profile.Load(path)
+	if err != nil || len(stored.Nodes) != 1 || stored.Nodes[0].Flag != "🇺🇸" {
+		t.Fatalf("add did not write the flag: %v (%s)", err, u.err)
+	}
+
+	u.editNode(u.state.Config.Nodes[0])
+	u.field("name").SetText("Renamed node")
+	u.saveEditor()
+	waitJob(t, u)
+	stored, err = profile.Load(path)
+	if err != nil || stored.Nodes[0].Name != "Renamed node" || stored.Nodes[0].Flag != "🇺🇸" {
+		t.Fatalf("remark edit did not preserve the flag: %v (%s)", err, u.err)
+	}
+
+	u.editNode(u.state.Config.Nodes[0])
+	u.field("server").SetText("223.5.5.5")
+	u.saveEditor()
+	waitJob(t, u)
+	stored, err = profile.Load(path)
+	if err != nil || stored.Nodes[0].Flag != "🇨🇳" {
+		t.Fatalf("address edit did not write the new flag: %v (%s)", err, u.err)
+	}
+
+	u.editNode(u.state.Config.Nodes[0])
+	u.field("server").SetText("127.0.0.1")
+	u.saveEditor()
+	waitJob(t, u)
+	stored, err = profile.Load(path)
+	if err != nil || stored.Nodes[0].Flag != "" {
+		t.Fatalf("unmapped address retained the old flag: %v (%s)", err, u.err)
 	}
 }

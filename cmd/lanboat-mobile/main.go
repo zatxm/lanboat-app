@@ -18,6 +18,7 @@ import (
 	"github.com/zatxm/lanboat-app/internal/corebackend"
 	"github.com/zatxm/lanboat-app/internal/coreipc"
 	"github.com/zatxm/lanboat-app/internal/desktop"
+	"github.com/zatxm/lanboat-app/internal/i18n"
 	"github.com/zatxm/lanboat-app/internal/native"
 	"go.uber.org/zap"
 )
@@ -26,7 +27,8 @@ var running atomic.Bool
 var home atomic.Pointer[string]
 
 //export LanboatHome
-func LanboatHome(path *C.char) {
+func LanboatHome(path, zone, language *C.char) {
+	i18n.SetSystemLocale(C.GoString(zone), C.GoString(language))
 	s := C.GoString(path)
 	home.Store(&s)
 }

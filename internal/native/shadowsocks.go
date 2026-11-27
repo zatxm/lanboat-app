@@ -88,7 +88,7 @@ func (v *nativeView) nodeField(spec profile.Field) *widget {
 	if spec.Hint == "" {
 		row = v.field(id, title, spec.Placeholder, spec.Secret)
 	} else {
-		row = v.nodeRow(title, v.box("", true, 12, false, v.box("", false, 0, true, v.input(id, spec.Placeholder, false, spec.Secret, false)), v.label(spec.Hint, "help")))
+		row = v.nodeRow(title, v.input(id, spec.Placeholder, false, spec.Secret, false), v.label(spec.Hint, "help"))
 	}
 	if spec.Key == "alpn" {
 		v.inputs[id].event = func(event, value string) {
@@ -163,7 +163,7 @@ func (v *nativeView) shadowsocksFields(box *widget) {
 	for _, field := range fields[:3] {
 		v.pack(row, v.nodeField(field))
 	}
-	v.pack(box, row, v.nodeField(fields[3]), v.field("name", "备注", "可选", false))
+	v.pack(box, row, v.nodeField(fields[3]), v.remarkField("可选"))
 	issue := v.label("", "help")
 	issue.update = func() {
 		n := u.draft.Clone()

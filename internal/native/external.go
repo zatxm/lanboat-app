@@ -1,11 +1,14 @@
 package native
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"github.com/zatxm/lanboat-app/internal/i18n"
 )
 
 var mobileOpen func(string) error
@@ -16,16 +19,41 @@ func SetMobileHandlers(open func(string) error, files func(string) (string, erro
 }
 
 func (u *UI) pickFile(title, pattern string, selected func(string)) {
-	if mobileFile == nil {
-		selected(choosePath(title, pattern, false))
+	page, detail, editor, node, file := u.page, u.detail, u.editor, u.draft.ID, u.fileID
+	u.pathDialog(title, pattern, false, func(path string) {
+		if u.page == page && u.detail == detail && u.editor == editor && u.draft.ID == node && u.fileID == file {
+			selected(path)
+		}
+	})
+}
+
+func (u *UI) pathDialog(title, pattern string, directory bool, selected func(string)) {
+	if u.fileDialogOpen {
 		return
 	}
+	u.fileDialogOpen = true
+	title = i18n.Text(u.state.Config.Settings.Language, title)
 	go func() {
-		path, err := mobileFile("")
+		var path string
+		var err error
+		if mobileFile != nil {
+			path, err = mobileFile("")
+		} else {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			go func() {
+				select {
+				case <-u.done:
+					cancel()
+				case <-ctx.Done():
+				}
+			}()
+			path, err = choosePath(ctx, title, pattern, directory)
+		}
 		u.post(update{background: true, apply: func() {
+			u.fileDialogOpen = false
 			if err != nil {
 				u.err = err.Error()
-				u.notify()
 				return
 			}
 			selected(path)
@@ -34,14 +62,18 @@ func (u *UI) pickFile(title, pattern string, selected func(string)) {
 }
 
 func (u *UI) saveFile(export func(string) (string, error)) {
+	if u.fileDialogOpen {
+		return
+	}
 	if mobileFile == nil {
-		directory := choosePath("选择保存目录", "", true)
-		if directory == "" {
-			return
-		}
-		var saved string
-		u.submit(func() error { var err error; saved, err = export(directory); return err },
-			func() { u.notice = "已导出到：\n" + saved })
+		u.pathDialog("选择保存目录", "", true, func(directory string) {
+			if directory == "" {
+				return
+			}
+			var saved string
+			u.submit(func() error { var err error; saved, err = export(directory); return err },
+				func() { u.notice = "已导出到：\n" + saved })
+		})
 		return
 	}
 	u.submit(func() error {

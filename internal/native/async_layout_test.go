@@ -78,12 +78,12 @@ func TestNativeWindowAsyncAndPagination(t *testing.T) {
 	// Choosing a URL preset/custom value edits the group draft, not global settings.
 	globalURL := u.state.Config.Settings.TestTarget()
 	custom := v.inputs["group.test.custom"]
-	if custom == nil || custom.parent.visible || u.popup == nil || u.popup.kind != "routing-group" {
+	if custom == nil || custom.visible || u.popup == nil || u.popup.kind != "routing-group" {
 		t.Fatal("group URL selector or initial custom field visibility")
 	}
 	v.inputs["group.test.choice"].edit("custom")
 	pumpUI()
-	if !custom.parent.visible || u.popup.kind != "routing-group" {
+	if !custom.visible || u.popup.kind != "routing-group" {
 		t.Fatal("custom URL did not open inline")
 	}
 	if got, want := custom.pointer.Bounds(), v.inputs["group.test.choice"].pointer.Bounds(); got.X != want.X || got.W != want.W {

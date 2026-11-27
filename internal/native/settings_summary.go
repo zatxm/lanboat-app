@@ -22,49 +22,26 @@ func (v *nativeView) settingLabel(title string, width float32) *widget {
 	return label
 }
 
-func (v *nativeView) compactFormRow(title string, control *widget, trailing ...*widget) *widget {
-	label := v.settingLabel(title, 0)
-	label.classes = "compact-form-key"
-	row := v.box("", true, 12, false, label, control)
-	v.formAlignmentPending = true
-	v.pack(row, trailing...)
-	return row
-}
-
-// Let Fego measure visible, translated labels before sizing the shared column.
-func (v *nativeView) alignCompactForm() {
-	if !v.formAlignmentPending {
-		return
+func (v *nativeView) formRow(title string, control *widget, trailing ...*widget) *widget {
+	if hasClass(control.classes, "switch") {
+		return v.box("", true, 12, false, append([]*widget{v.label(title, "node-name"), control}, trailing...)...)
 	}
-	v.formAlignmentPending = false
-	var keys []*widget
-	for _, w := range v.widgets {
-		if w.classes == "compact-form-key" {
-			keys = append(keys, w)
-			w.pointer.Width(0)
+	if control.kind == "select" || (control.kind == "entry" || control.kind == "text") && !control.readonly {
+		control.fieldTitle = title
+		control.localizeFieldTitle()
+		if len(trailing) == 0 {
+			if control.kind != "text" {
+				control.setExpand(false)
+			}
+			return control
 		}
+		control.setExpand(true)
+		return v.box("", true, 10, false, append([]*widget{control}, trailing...)...)
 	}
-	if len(keys) < 2 {
-		return
+	if title == "" {
+		return control
 	}
-	if v.tester != nil {
-		v.tester.Step()
-	} else if painter, ok := v.events.(interface{ PaintIfDirty() }); ok {
-		painter.PaintIfDirty()
-	}
-	var width float32
-	for _, key := range keys {
-		visible := true
-		for w := key; w != nil; w = w.parent {
-			visible = visible && w.visible
-		}
-		if visible {
-			width = max(width, key.pointer.Bounds().W)
-		}
-	}
-	for _, key := range keys {
-		key.pointer.Width(width)
-	}
+	return v.box("", false, 8, false, v.label(title, "field-label"), control)
 }
 func (v *nativeView) alignedSettingValue(title string, value func() string) *widget {
 	return v.alignedSetting(title, v.settingText(value))

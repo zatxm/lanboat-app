@@ -92,8 +92,8 @@ func TestSubscriptionImportSwitchAndRuleScope(t *testing.T) {
 			}
 		}
 		address, toggle := v.inputs["nodeImportURL"], v.inputs["nodeImportRules"]
-		if address.parent != toggle.parent || toggle.pointer.Checked() || v.inputs["content"] != nil {
-			t.Fatal("subscription mode should start with a URL and an unchecked switch in one row")
+		if address.fieldTitle != "订阅地址" || toggle.pointer.Checked() || v.inputs["content"] != nil {
+			t.Fatal("subscription mode should show a floating URL field and an unchecked switch")
 		}
 		if keep {
 			toggle.click()

@@ -44,8 +44,7 @@ func (v *nativeView) tcpEditor(box *widget) {
 	choice := func(title, key string, options []option) *widget {
 		w := v.selectWidget(u.field(key).Text(), options, false, func(value string) { u.field(key).SetText(value) })
 		v.inputs[key] = w
-		w.setClasses("protocol-choice")
-		return v.alignedSetting(title, w)
+		return v.formRow(title, w)
 	}
 	v.pack(box, v.alignedSettingValue("TLS", func() string { return "Go/uTLS" }), choice("指纹", "tcp.fingerprint", opts), v.label("节点未指定指纹时使用此设置；节点自己的指纹设置优先。", "help"), choice("最大读取长度", "tcp.maxRead", []option{{"0", "0（不限制长度）"}, {"4096", "4096"}, {"8192", "8192"}, {"16384", "16384"}}))
 	v.dialogActions(box, u.saveTCP)

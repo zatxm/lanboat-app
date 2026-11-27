@@ -89,16 +89,9 @@ func TestRoutingConfigNameRowAndPreviewActivity(t *testing.T) {
 		v.tester.Step()
 		input := v.inputs["fileName"]
 		b := input.pointer.Bounds()
-		for _, w := range v.widgets {
-			if w.parent != nil && w.parent.parent == input.parent && w.text == "名称" {
-				label := w.pointer.Bounds()
-				if b.X <= label.X+label.W || label.Y < b.Y || label.Y+label.H > b.Y+b.H {
-					t.Fatalf("name label %v and input %v should share a row", label, b)
-				}
-				return
-			}
+		if input.fieldTitle != "名称" || b.W == 0 || b.W != input.parent.pointer.Bounds().W-36 {
+			t.Fatalf("name needs a floating caption and full form width: %q %v", input.fieldTitle, b)
 		}
-		t.Fatal("name label missing")
 	}
 	u.openPage("config")
 	u.editConfigFile(profile.ConfigFile{ID: "custom", Name: "test.conf"})

@@ -15,6 +15,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.lang.ref.WeakReference;
+import java.util.Locale;
+import java.util.TimeZone;
 
 public final class LanboatBridge {
     private static final int VPN_PERMISSION = 118, PICK_FILE = 119, SAVE_FILE = 120;
@@ -27,10 +29,11 @@ public final class LanboatBridge {
     public static void attach(Activity host) {
         activity = new WeakReference<>(host);
         context = host.getApplicationContext();
-        init(context.getFilesDir().getAbsolutePath());
+        init(context.getFilesDir().getAbsolutePath(),
+                TimeZone.getDefault().getID(), Locale.getDefault().toLanguageTag());
     }
 
-    private static native void init(String home);
+    private static native void init(String home, String zone, String language);
     static native boolean attached(long request, int fd);
     static native void revoked(long request);
     private static native void fileResult(String path);

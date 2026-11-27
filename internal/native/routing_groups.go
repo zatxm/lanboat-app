@@ -106,7 +106,7 @@ func (v *nativeView) routingGroupFields(box *widget) {
 	})
 	mode.setExpand(true)
 	v.inputs["group.type"] = mode
-	v.pack(box, v.compactFormRow("名称", name), v.compactFormRow("类型", mode))
+	v.pack(box, v.formRow("名称", name), v.formRow("类型", mode))
 
 	if kind == "select" {
 		current := u.field("group.selected").Text()
@@ -117,13 +117,13 @@ func (v *nativeView) routingGroupFields(box *widget) {
 		choice := v.selectWidget(current, options, false, func(value string) { u.field("group.selected").SetText(value) })
 		choice.setExpand(true)
 		v.inputs["group.selected"] = choice
-		v.pack(box, v.compactFormRow("默认策略", choice))
+		v.pack(box, v.formRow("默认策略", choice))
 	} else {
-		v.pack(box, v.groupTestMembers(), v.urlFields("group.test", profile.TestURLs, 0))
+		v.pack(box, v.groupTestMembers(), v.urlFields("group.test", profile.TestURLs))
 		numeric := func(key, title, unit string) *widget {
 			input := v.input(key, "", false, false, false)
 			input.setExpand(true)
-			return v.compactFormRow(title, input, v.label(unit, "help"))
+			return v.formRow(title, input, v.label(unit, "help"))
 		}
 		v.pack(box, numeric("group.interval", "测速间隔", "秒"), numeric("group.tolerance", "切换公差", "毫秒"))
 	}
@@ -156,9 +156,7 @@ func (v *nativeView) groupTestMembers() *widget {
 	}).Height(float32(min(5, len(options)) * 31))
 	holder := v.box("option-group", false, 0, true)
 	holder.pointer.Append(list)
-	row := v.compactFormRow("测速节点", holder)
-	row.pointer.AlignItems(ui.Start)
-	return row
+	return v.formRow("测速节点", holder)
 }
 func (v *nativeView) routingGroupsPage() {
 	u := v.ui

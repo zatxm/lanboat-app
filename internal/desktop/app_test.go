@@ -94,7 +94,7 @@ func TestCopyNodePreservesPrivateConfiguration(t *testing.T) {
 
 func TestSubscriptionRefreshIsAtomic(t *testing.T) {
 	a := testApp(t)
-	content := profile.URI(profile.Node{Name: "sub", Server: "example.com", Port: 8388, Method: "aes-256-gcm", Password: "secret"})
+	content := profile.URI(profile.Node{Type: "socks5", Name: "sub", Server: "example.com", Port: 1080})
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(content)) }))
 	defer server.Close()
 	a.client = server.Client()
@@ -104,11 +104,27 @@ func TestSubscriptionRefreshIsAtomic(t *testing.T) {
 	state := a.GetState()
 	id := state.Config.Subscriptions[0].ID
 	nodeID := state.Config.Nodes[0].ID
+	shareLink, err := a.ExportNode(nodeID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	node := state.Config.Nodes[0]
+	node.Flag = "🇯🇵"
+	if err := a.SaveNode(node); err != nil {
+		t.Fatal(err)
+	}
+	saved, err := profile.Load(a.path)
+	if err != nil || saved.Nodes[0].Flag != "🇯🇵" || saved.Nodes[0].Name != "sub" {
+		t.Fatal("flag update did not persist separately from the node name", err)
+	}
+	if uri, err := a.ExportNode(nodeID); err != nil || uri != shareLink {
+		t.Fatal("flag update changed the share link", err)
+	}
 	if _, err := a.RefreshSubscription(id); err != nil {
 		t.Fatal(err)
 	}
-	if a.GetState().Config.Nodes[0].ID != nodeID {
-		t.Fatal("unchanged node selection lost")
+	if node := a.GetState().Config.Nodes[0]; node.ID != nodeID || node.Flag != "🇯🇵" {
+		t.Fatal("refresh lost the existing node or its flag")
 	}
 	content = "invalid subscription"
 	if _, err := a.RefreshSubscription(id); err == nil {

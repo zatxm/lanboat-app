@@ -73,20 +73,10 @@ func TestNativeWindowConnectivityAndFeedback(t *testing.T) {
 		for key, title := range map[string]string{"test.choice": "URL", "test.custom": "自定义URL", "testTimeout": "超时时长（秒）", "testConcurrency": "并发数量"} {
 			input := v.inputs[key]
 			r := input.pointer.Bounds()
-			var label *widget
-			for _, w := range v.widgets {
-				if w.text == title && w.parent != nil && w.parent.parent == input.parent {
-					label = w
-					break
-				}
+			if input.fieldTitle != title || r.X != url.X || r.W != url.W {
+				t.Fatalf("unaligned floating control %s: %q %v, want %q and width %v", key, input.fieldTitle, r, title, url.W)
 			}
-			if label == nil || r.X != url.X || r.W == 0 {
-				t.Fatalf("unaligned control %s: %v", key, r)
-			}
-			l := label.pointer.Bounds()
-			if dy, gap := (l.Y+l.H/2)-(r.Y+r.H/2), r.X-l.X-l.W; dy < -1 || dy > 1 || gap < 11 || gap > 13 {
-				t.Fatalf("label %s is not aligned with its control: %v %v", title, l, r)
-			}
+
 		}
 	}
 	v.inputs["test.custom"].edit("https://example.com/test")

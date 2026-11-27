@@ -22,7 +22,7 @@ func TestImportURLsAtomicallyAndRetainsRules(t *testing.T) {
 			w.WriteHeader(500)
 			return
 		}
-		fmt.Fprint(w, "proxies:\n  - {name: node, type: ss, server: example.com, port: 443, cipher: aes-256-gcm, password: secret}\nrules:\n  - DOMAIN,retained.example,DIRECT\n")
+		fmt.Fprint(w, "proxies:\n  - {name: node, type: ss, server: 8.8.8.8, port: 443, cipher: aes-256-gcm, password: secret}\nrules:\n  - DOMAIN,retained.example,DIRECT\n")
 	}))
 	defer server.Close()
 	if _, err := a.Import(server.URL + "/good\n" + server.URL + "/bad"); err == nil {
@@ -31,13 +31,17 @@ func TestImportURLsAtomicallyAndRetainsRules(t *testing.T) {
 	if len(a.GetState().Config.Nodes) != 0 {
 		t.Fatal("partial import")
 	}
-	count, err := a.Import(server.URL + "/good\nss://YWVzLTI1Ni1nY206cA@example.org:443#local")
+	count, err := a.Import(server.URL + "/good\nss://YWVzLTI1Ni1nY206cA@127.0.0.1:443#🇯🇵%20local")
 	if err != nil || count != 2 {
 		t.Fatal(count, err)
 	}
 	c := a.GetState().Config
 	if len(c.Subscriptions) != 1 || !c.Subscriptions[0].KeepRules || len(c.Nodes) != 2 || c.Nodes[0].Source != c.Subscriptions[0].ID || c.Nodes[1].Source != "" {
 		t.Fatal("incorrect import categories")
+	}
+	saved, err := profile.Load(a.path)
+	if err != nil || saved.Nodes[0].Flag != "🇺🇸" || saved.Nodes[1].Flag != "🇯🇵" {
+		t.Fatal("import did not persist the IP country and the supplied flag", err)
 	}
 	found := false
 	for _, f := range c.RuleOverlays {
@@ -318,6 +322,7 @@ func TestImportExportNodeBundle(t *testing.T) {
 	a := seedBackupApp(t)
 	a.config.Subscriptions = []profile.Subscription{{ID: "sub1", Name: "my feed", URL: "https://example.com/feed"}}
 	a.config.Nodes[0].Source = "sub1"
+	a.config.Nodes[0].Flag = "🇯🇵"
 	a.config.RuleOverlays = []profile.RuleOverlay{{ID: "sub1", Name: "custom", SubscriptionID: "sub1", NodeIDs: []string{a.config.Nodes[0].ID}, Content: "[Rule]\nFINAL,DIRECT"}}
 	path, err := a.ExportDataTo("nodes", "", t.TempDir())
 	if err != nil {
@@ -329,7 +334,7 @@ func TestImportExportNodeBundle(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if len(b.config.Nodes) != 1 || b.config.Nodes[0].Source != "sub1" || b.config.Subscriptions[0] != a.config.Subscriptions[0] || b.config.Selected != a.config.Selected || len(b.config.RuleOverlays) != 1 || len(b.config.Files) != 1 {
+	if len(b.config.Nodes) != 1 || b.config.Nodes[0].Source != "sub1" || b.config.Nodes[0].Flag != "🇯🇵" || b.config.Subscriptions[0] != a.config.Subscriptions[0] || b.config.Selected != a.config.Selected || len(b.config.RuleOverlays) != 1 || len(b.config.Files) != 1 {
 		t.Fatal("node transfer lost associations or imported global settings")
 	}
 }

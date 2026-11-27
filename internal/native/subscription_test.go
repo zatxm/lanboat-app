@@ -1,7 +1,6 @@
 package native
 
 import (
-	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -48,6 +47,7 @@ func TestNativeWindowSubscriptionForm(t *testing.T) {
 		t.Fatal("UserAgent should automatically show the default and offer all presets")
 	}
 	v.inputs["subURL"].edit(server.URL + "?flag=loon")
+	pump()
 	if !strings.Contains(selector.options[0].label, "Loon/1.0") {
 		t.Fatal("Loon link did not update the automatic user agent")
 	}
@@ -56,33 +56,37 @@ func TestNativeWindowSubscriptionForm(t *testing.T) {
 			t.Fatal("obsolete form element", w.text)
 		}
 	}
-	var label *widget
-	for _, w := range v.widgets {
-		if w.text == "协议类型" {
-			label = w
-			break
-		}
-	}
-	if label == nil {
-		t.Fatal("missing protocol label")
-	}
 	checkProtocolLayout := func() {
 		t.Helper()
-		labelBox := label.pointer.Bounds()
-		selectBox := v.inputs["protocol"].pointer.Bounds()
-		gap := selectBox.X - (labelBox.X + labelBox.W)
-		centerDelta := selectBox.Y + selectBox.H/2 - (labelBox.Y + labelBox.H/2)
-		if math.Abs(float64(gap-12)) > 1 || math.Abs(float64(centerDelta)) > 1 {
-			t.Fatalf("protocol select placement: gap=%g, center offset=%g", gap, centerDelta)
+		w := v.inputs["protocol"]
+		if w.fieldTitle != "协议类型" || w.pointer.Bounds().W == 0 {
+			t.Fatal("protocol selector is missing its floating label or width")
 		}
 	}
 	checkProtocolLayout()
 	edge := v.inputs["protocol"].pointer.Bounds()
-	for _, key := range []string{"subUA.choice", "subFilter", "subURL", "subUDP", "subKeepRules", "name"} {
+	inputHeight := v.inputs["subURL"].pointer.Bounds().H
+	for _, key := range []string{"protocol", "subUA.choice"} {
+		if height := v.inputs[key].content.Bounds().H; height != inputHeight {
+			t.Errorf("%s height %v should match the input height %v", key, height, inputHeight)
+		}
+	}
+	remark := v.inputs["name"]
+	if remark.kind != "text" || remark.pointer.Bounds().H < inputHeight+20 {
+		t.Fatal("remark must provide at least two lines of input")
+	}
+	for _, key := range []string{"subUA.choice", "subFilter", "subURL", "name"} {
 		w := v.inputs[key]
 		r := w.pointer.Bounds()
-		if r.X != edge.X || !hasClass(w.classes, "switch") && r.W != edge.W {
-			t.Errorf("misaligned field %s: %v, expected edges of %v", key, r, edge)
+		if r.X != edge.X || r.W != edge.W || w.fieldTitle == "" {
+			t.Errorf("misaligned floating field %s: %v, expected edges of %v", key, r, edge)
+		}
+	}
+	for _, key := range []string{"subUDP", "subKeepRules"} {
+		toggle := v.inputs[key]
+		r := toggle.pointer.Bounds()
+		if toggle.parent.pointer.Bounds().X != edge.X || r.X <= edge.X {
+			t.Errorf("switch %s should have a left-aligned caption", key)
 		}
 	}
 	for _, key := range []string{"subUDP", "subInsecure", "subFastOpen"} {
@@ -119,7 +123,8 @@ func TestNativeWindowSubscriptionForm(t *testing.T) {
 		}
 	}
 	checkAgentLayout()
-	for key, value := range map[string]string{"name": "Subscription notes", "subURL": server.URL, "subUDP": "false", "subInsecure": "true", "subFastOpen": "true", "subMax": "5", "subUA": "CustomAgent", "subPassword": "decrypt-secret", "subFilter": "HK|SG"} {
+	const notes = "Subscription notes\nSecond line"
+	for key, value := range map[string]string{"name": notes, "subURL": server.URL, "subUDP": "false", "subInsecure": "true", "subFastOpen": "true", "subMax": "5", "subUA": "CustomAgent", "subPassword": "decrypt-secret", "subFilter": "HK|SG"} {
 		if key == "subUDP" || key == "subInsecure" || key == "subFastOpen" {
 			if u.field(key).Text() != value {
 				v.inputs[key].click()
@@ -141,7 +146,7 @@ func TestNativeWindowSubscriptionForm(t *testing.T) {
 	assertEnglishWidgets(t, v)
 	checkProtocolLayout()
 	checkAgentLayout()
-	if u.field("name").Text() != "Subscription notes" || v.inputs["subPassword"].nativeText() != "decrypt-secret" || next != v.next {
+	if u.field("name").Text() != notes || v.inputs["subPassword"].nativeText() != "decrypt-secret" || next != v.next {
 		t.Fatal("translation lost subscription fields")
 	}
 	v.save.click()
@@ -159,7 +164,7 @@ func TestNativeWindowSubscriptionForm(t *testing.T) {
 	if overlay.SubscriptionID != sub.ID || len(overlay.NodeIDs) != 1 || overlay.NodeIDs[0] != u.state.Config.Nodes[0].ID || overlay.Content == "" {
 		t.Fatal("subscription rules are not scoped to its node")
 	}
-	if sub.Password != "" || sub.Name != "Subscription notes" || sub.UDP != "false" || !sub.KeepRules {
+	if sub.Password != "" || sub.Name != notes || sub.UDP != "false" || !sub.KeepRules {
 		t.Fatal("form options not saved or password exposed")
 	}
 	u.editSubscription(sub)

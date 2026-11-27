@@ -23,34 +23,24 @@ func (v *nativeView) nodeImportFields(box *widget) {
 		u.field("nodeImportMethod").SetText(value)
 		u.render()
 	})
-	// The dropdown only needs room for the longest localized method.
-	if v.ui.state.Config.Settings.Language == "en" {
-		method.pointer.Width(134)
-	} else {
-		method.pointer.Width(100)
-	}
 	v.inputs["nodeImportMethod"] = method
-	row := v.box("", true, 12, false, v.label("方式", "field-label"), method)
-	switch method.value {
-	case "subscription":
-		address := v.input("nodeImportURL", "https://…", false, false, false)
-		address.setExpand(true)
-		address.pointer.Label(v.translate("订阅地址"))
-		v.pack(row, address, v.label("保留分流规则", "field-label"), v.switchInput("nodeImportRules", "保留分流规则"))
-	case "file":
-		v.pack(row, v.button("选择文件", "link icon-upload", false, false, func() {
+	if method.value == "file" {
+		v.pack(box, v.formRow("方式", method, v.button("选择文件", "link icon-upload", false, false, func() {
 			u.pickFile("导入节点", "*", func(path string) {
 				if path != "" {
 					u.field("nodeImportPath").SetText(path)
 					u.render()
 				}
 			})
-		}))
+		})))
+	} else {
+		v.pack(box, v.formRow("方式", method))
 	}
-	v.pack(box, row)
 	switch method.value {
 	case "subscription":
-		v.pack(box, v.subscriptionAgent("nodeImportUA", "nodeImportURL"))
+		address := v.input("nodeImportURL", "https://…", false, false, false)
+		v.pack(box, v.formRow("订阅地址", address), v.subscriptionAgent("nodeImportUA", "nodeImportURL"),
+			v.formSwitch("nodeImportRules", "保留分流规则"))
 	case "file":
 		if path := u.field("nodeImportPath").Text(); path != "" {
 			v.pack(box, v.dataLabel(path, "help"))

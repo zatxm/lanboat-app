@@ -204,8 +204,8 @@ func TestNativeWindowRoutingLayout(t *testing.T) {
 	nameBox := v.inputs["fileName"].pointer.Bounds()
 	for _, key := range []string{"importMethod", "importURL"} {
 		r := v.inputs[key].pointer.Bounds()
-		if r.X != nameBox.X || r.W != nameBox.W {
-			t.Fatalf("configuration field %s differs in width or position: %v vs %v", key, r, nameBox)
+		if r.X != nameBox.X || r.W <= 0 || (r.W == nameBox.W) != (key == "importMethod") {
+			t.Fatalf("configuration field %s does not align within its row: %v vs %v", key, r, nameBox)
 		}
 	}
 	inline := func(input, button *widget) {

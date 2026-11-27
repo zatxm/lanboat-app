@@ -98,16 +98,19 @@ func TestNativeWindowDNSAndAbout(t *testing.T) {
 		t.Helper()
 		x, _, width, _ := control.bounds()
 		left, _, rowWidth, _ := control.parent.bounds()
-		if width == 0 || x+width != left+rowWidth {
+		if hasClass(control.parent.classes, "panel") {
+			left += 18
+			rowWidth -= 36
+		}
+		if width == 0 || x != left || width != rowWidth {
 			t.Fatal("DNS control does not fill the row", control.value, x, width, left, rowWidth)
 		}
 	}
 	for _, w := range v.widgets {
 		if w.kind == "select" && w.value == "system" && len(w.options) == 4 {
-			_, _, width, _ := w.bounds()
-			_, _, rowWidth, _ := w.parent.bounds()
-			if width == 0 || width >= rowWidth {
-				t.Fatal("standalone bootstrap selector should have a compact width", width, rowWidth)
+			controlFillsRow(w)
+			if w.fieldTitle != "引导解析" {
+				t.Fatal("bootstrap selector is missing its floating label")
 			}
 		}
 	}
@@ -164,30 +167,15 @@ func TestNativeWindowDNSAndAbout(t *testing.T) {
 	if px != tx || pw <= tw || tw == 0 {
 		t.Fatal("Resolver and route should share the left edge and resolver should be wider", px, pw, tx, tw)
 	}
-	_, _, available, _ := proxy.parent.bounds()
-	if pw >= available {
-		t.Fatal("resolver field took the whole column", pw, available)
-	}
-	for _, w := range v.widgets {
-		if w.kind == "select" && w.parent.parent != nil && w.parent.parent.parent == proxy.parent.parent.parent {
-			x, _, width, _ := w.bounds()
-			if x != px || width != pw {
-				t.Fatal("resolver selector and input are misaligned", x, width, px, pw)
-			}
-		}
+	controlFillsRow(proxy)
+	if proxy.fieldTitle != "服务器" || timeout.fieldTitle != "查询超时" {
+		t.Fatal("resolver or route input lost its floating label")
 	}
 	for _, id := range []string{"dns.fakeIPv4", "dns.fakeIPv6", "dns.filter"} {
 		control := v.inputs[id]
 		controlFillsRow(control)
-		if bounds := control.pointer.Bounds(); bounds.X != float32(px) {
-			t.Fatal("FakeIP fields lost their common alignment", id, bounds)
-		}
-		if id == "dns.filter" {
-			for _, w := range v.widgets {
-				if w.text == "FakeIP排除域名" && w.parent.pointer.Bounds().Y != control.pointer.Bounds().Y {
-					t.Fatal("FakeIP exclusions label is not top aligned")
-				}
-			}
+		if bounds := control.pointer.Bounds(); bounds.X != float32(px) || control.fieldTitle == "" {
+			t.Fatal("FakeIP fields lost their common alignment or label", id, bounds)
 		}
 	}
 	u.field("dns.proxy").SetText("auto")

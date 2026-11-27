@@ -90,8 +90,6 @@ func (w *widget) style() {
 		}
 	case is("about-key"):
 		e.Width(132)
-	case is("dns-control"):
-		e.Width(228)
 	case is("editor-content"):
 		e.Padding(0, 14, 0, 0)
 	case is("group-row"):

@@ -5,7 +5,6 @@ import (
 	"image"
 	"image/color"
 	"image/png"
-	"os/exec"
 	"runtime"
 	"runtime/debug"
 	"slices"
@@ -49,6 +48,7 @@ type widget struct {
 	view                        *nativeView
 	raw                         bool
 	placeholder, tooltip, value string
+	fieldTitle                  string
 	options                     []option
 }
 type control struct {
@@ -57,45 +57,48 @@ type control struct {
 }
 
 type nativeView struct {
-	tray                                                *fego.Tray
-	logger                                              *zap.Logger
-	theme                                               string
-	language                                            string
-	window                                              *fego.Window
-	compact, compactRouting, mobile                     bool
-	formAlignmentPending                                bool
-	events                                              fego.View
-	doc                                                 *ui.Document
-	tester                                              *ui.Tester
-	ui                                                  *UI
-	widgets                                             map[int]*widget
-	next                                                int
-	shell, frame, scroll, main, body                    *widget
-	editorScroll                                        *widget
-	popupRoot, popupError                               *widget
-	updateCheck                                         *widget
-	popupShown                                          *popup
-	bannerRows                                          [3]*widget
-	dismissedCoreError                                  string
-	title, alert, notice, coreError, back, header, save *widget
-	nav                                                 map[string]*widget
-	controls                                            []control
-	inputs                                              map[string]*widget
-	connection                                          *widget
-	power                                               *widget
-	routing                                             *widget
-	download                                            *widget
-	upload                                              *widget
-	totalDown                                           *widget
-	totalUp                                             *widget
-	connections                                         *widget
-	uptime                                              *widget
-	nodeContainer, nodeScroll, exportNodes              *widget
-	delayLabels                                         map[string]*widget
-	logContainer, logPager                              *widget
-	logSignature                                        string
-	backupList, backupCreate                            *widget
-	backupRows                                          []desktop.BackupInfo
+	tray                                                 *fego.Tray
+	logger                                               *zap.Logger
+	theme                                                string
+	language                                             string
+	window                                               *fego.Window
+	compact, compactRouting, mobile                      bool
+	events                                               fego.View
+	doc                                                  *ui.Document
+	tester                                               *ui.Tester
+	ui                                                   *UI
+	widgets                                              map[int]*widget
+	next                                                 int
+	shell, frame, scroll, main, body                     *widget
+	editorScroll                                         *widget
+	popupRoot, popupError                                *widget
+	updateCheck                                          *widget
+	popupShown                                           *popup
+	bannerRows                                           [3]*widget
+	dismissedCoreError                                   string
+	title, alert, notice, coreError, back, header, save  *widget
+	nav                                                  map[string]*widget
+	controls                                             []control
+	inputs                                               map[string]*widget
+	connection                                           *widget
+	power                                                *widget
+	routing                                              *widget
+	download                                             *widget
+	upload                                               *widget
+	totalDown                                            *widget
+	totalUp                                              *widget
+	connections                                          *widget
+	uptime                                               *widget
+	nodeContainer, nodeScroll, nodeViewport, exportNodes *widget
+	mobileNodes                                          *ui.VirtualListView
+	mobileRows                                           map[int]visibleNodeRow
+	mobileVisible                                        [2]int
+	buildingNode                                         *[]*widget
+	delayLabels                                          map[string]*widget
+	logContainer, logPager                               *widget
+	logSignature                                         string
+	backupList, backupCreate                             *widget
+	backupRows                                           []desktop.BackupInfo
 }
 
 var active *nativeView
@@ -129,21 +132,25 @@ func Run(backend *desktop.App, logger *zap.Logger) error {
 	if mobile {
 		appID = "org.lanboat.mobile"
 	}
-	windowPNG, trayPNG := icons.PNG, icons.TrayPNG
-	if runtime.GOOS == "linux" {
-		appID, title = appmeta.ID, linuxWindowTitle
-		windowPNG = icons.WindowPNG
-	}
-	if runtime.GOOS == "darwin" {
-		trayPNG = icons.MenuPNG
-	}
-	windowIcon, err := png.Decode(bytes.NewReader(windowPNG))
-	if err != nil {
-		return err
-	}
-	trayIcon, err := png.Decode(bytes.NewReader(trayPNG))
-	if err != nil {
-		return err
+	var windowIcon, trayIcon image.Image
+	if !mobile {
+		windowPNG, trayPNG := icons.PNG, icons.TrayPNG
+		if runtime.GOOS == "linux" {
+			appID = appmeta.ID
+			windowPNG = icons.WindowPNG
+		}
+		if runtime.GOOS == "darwin" {
+			trayPNG = icons.MenuPNG
+		}
+		var err error
+		windowIcon, err = png.Decode(bytes.NewReader(windowPNG))
+		if err != nil {
+			return err
+		}
+		trayIcon, err = png.Decode(bytes.NewReader(trayPNG))
+		if err != nil {
+			return err
+		}
 	}
 	if err := fego.App.SetOptions(fego.AppOptions{ID: appID, Name: appmeta.Name, Icon: windowIcon}); err != nil {
 		return err
@@ -167,6 +174,9 @@ func Run(backend *desktop.App, logger *zap.Logger) error {
 	var openErr error
 	fego.App.WhenReady(func() {
 		opts := fego.WindowOptions{Title: title, Width: 1160, Height: 800, Content: display{v}}
+		if !mobile {
+			opts.MinWidth, opts.MinHeight = minWindowWidth, minWindowHeight
+		}
 		if runtime.GOOS == "darwin" {
 			opts.TitleBarIcon = trayIcon
 		}
@@ -330,7 +340,11 @@ func (v *nativeView) create(kind string, p props) *widget {
 	if w.expand {
 		w.pointer.Grow(1)
 	}
-	v.widgets[w.id] = w
+	if v.buildingNode != nil {
+		*v.buildingNode = append(*v.buildingNode, w)
+	} else {
+		v.widgets[w.id] = w
+	}
 	w.style()
 	w.localize()
 	return w
@@ -365,6 +379,7 @@ func (v *nativeView) clear(parent *widget) {
 			controls = append(controls, c)
 		}
 	}
+	clear(v.controls[len(controls):])
 	v.controls = controls
 	for key, w := range v.inputs {
 		if _, ok := v.widgets[w.id]; !ok {
@@ -513,7 +528,15 @@ func (w *widget) localizeOptions() {
 			selected = i
 		}
 	}
-	w.pointer.Children(ui.Select(labels, selected).Height(38).Radius(8).OnSelect(func(i int) { w.dispatch("change", w.options[i].value) }))
+	w.content = ui.Select(labels, selected).Radius(8).OnSelect(func(i int) { w.dispatch("change", w.options[i].value) })
+	w.localizeFieldTitle()
+	w.pointer.Children(w.content)
+}
+
+func (w *widget) localizeFieldTitle() {
+	if w.fieldTitle != "" {
+		w.content.FloatingLabel(w.view.translate(w.fieldTitle))
+	}
 }
 func (w *widget) setValue(s string) { w.value = s; w.content.SetText(s) }
 func (w *widget) setPlaceholder(s string) {
@@ -526,7 +549,6 @@ func (v *nativeView) refreshLanguage() {
 		return
 	}
 	v.language = lang
-	v.formAlignmentPending = true
 	if v.tray != nil {
 		if err := v.tray.SetMenu(v.trayMenu()); err != nil {
 			v.logger.Warn("update system tray menu", zap.Error(err))
@@ -542,6 +564,8 @@ func (v *nativeView) refreshLanguage() {
 		}
 		if w.options != nil {
 			w.localizeOptions()
+		} else {
+			w.localizeFieldTitle()
 		}
 		if hasClass(w.classes, "search-input") {
 			w.content.Label(v.translate(w.tooltip))
@@ -572,7 +596,7 @@ func (w *widget) scheduleActivityFrame() {
 	time.AfterFunc(65*time.Millisecond, func() {
 		fego.App.Post(func() {
 			w.activityFramePending = false
-			if active != v || !w.loading || v.widgets[w.id] != w {
+			if active != v || !w.loading || !v.containsWidget(w) {
 				return
 			}
 			w.activityIcon.Refresh()
@@ -604,41 +628,9 @@ func copyClipboard(s string) {
 		active.window.SetClipboard(s)
 	}
 }
-func choosePath(title, pattern string, dir bool) string {
-	title = active.translate(title)
-	var cmd *exec.Cmd
-	switch runtime.GOOS {
-	case "windows":
-		script := "Add-Type -AssemblyName System.Windows.Forms; $d=New-Object System.Windows.Forms.OpenFileDialog; if($d.ShowDialog() -eq 'OK'){[Console]::OutputEncoding=[Text.UTF8Encoding]::new();[Console]::Write($d.FileName)}"
-		if dir {
-			script = strings.ReplaceAll(strings.ReplaceAll(script, "OpenFileDialog", "FolderBrowserDialog"), "FileName", "SelectedPath")
-		}
-		cmd = exec.Command("powershell.exe", "-NoProfile", "-STA", "-Command", script)
-	case "darwin":
-		s := "POSIX path of (choose file)"
-		if dir {
-			s = "POSIX path of (choose folder)"
-		}
-		cmd = exec.Command("osascript", "-e", s)
-	default:
-		args := []string{"--file-selection", "--title", title}
-		if dir {
-			args = append(args, "--directory")
-		} else if pattern != "" {
-			args = append(args, "--file-filter", pattern)
-		}
-		cmd = exec.Command("zenity", args...)
-	}
-	out, err := cmd.Output()
-	if err != nil {
-		if _, ok := err.(*exec.ExitError); !ok {
-			active.ui.err = err.Error()
-			active.ui.notify()
-		}
-		return ""
-	}
-	return strings.TrimRight(string(out), "\r\n")
-}
+
+// Minimum desktop client area, in logical pixels.
+const minWindowWidth, minWindowHeight = 960, 594
 
 type display struct{ v *nativeView }
 type eventView struct {
@@ -654,12 +646,16 @@ func (d display) Mount(h fego.Host) fego.View {
 func (v *nativeView) compactWindow() bool { return v.compact }
 
 // Forward Fego’s optional retained repaint hook through the event adapter.
-func (d eventView) PaintIfDirty() { d.View.(interface{ PaintIfDirty() }).PaintIfDirty() }
+func (d eventView) PaintIfDirty() {
+	d.View.(interface{ PaintIfDirty() }).PaintIfDirty()
+	d.v.pruneMobileNodeRows()
+}
 
 func (d eventView) Event(e fego.Event) {
-	if e.Kind == fego.Resize && e.Width > 0 {
+	if e.Kind == fego.Resize && e.Width > 0 && e.Height > 0 {
 		v := d.v
-		width := float32(e.Width) / max(1, e.Scale)
+		scale := max(1, e.Scale)
+		width := float32(e.Width) / scale
 		compact, compactRouting := width < 940, width < 1080
 		changed, routingChanged := compact != v.compact, compactRouting != v.compactRouting
 		v.compact, v.compactRouting = compact, compactRouting
@@ -675,6 +671,7 @@ func (d eventView) Event(e fego.Event) {
 		return
 	}
 	d.View.Event(e)
+	d.v.pruneMobileNodeRows()
 }
 func (v *nativeView) send(e fego.Event) {
 	if v.tester != nil {
@@ -717,7 +714,9 @@ func (w *widget) scrollPosition(pos int) int {
 	return old
 }
 func (v *nativeView) top() {
-	if v.nodeScroll != nil {
+	if v.mobileNodes != nil {
+		v.mobileNodes.ScrollTo(0)
+	} else if v.nodeScroll != nil {
 		v.nodeScroll.scrollPosition(0)
 	} else {
 		v.scroll.scrollPosition(0)

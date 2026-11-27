@@ -87,7 +87,7 @@ func (v *nativeView) proxyFields(box *widget, section string) {
 	field := func(key, title, placeholder string) *widget {
 		input := v.input("proxy."+key, placeholder, false, false, false)
 		input.setExpand(true)
-		return v.compactFormRow(title, input)
+		return v.formRow(title, input)
 	}
 	switchRow := func(title, key string, conditional *widget, trailing ...*widget) *widget {
 		b := v.switchInput("proxy."+key, title)
@@ -100,7 +100,7 @@ func (v *nativeView) proxyFields(box *widget, section string) {
 				fitNativeDialog()
 			}
 		}
-		return v.compactFormRow(title, b, trailing...)
+		return v.formRow(title, b, trailing...)
 	}
 	switch section {
 	case "port":
@@ -130,7 +130,7 @@ func (v *nativeView) proxyFields(box *widget, section string) {
 		choice.setExpand(true)
 		v.inputs["proxy.type"] = choice
 		fields := v.box("", false, 12, false,
-			v.compactFormRow("类型", choice),
+			v.formRow("类型", choice),
 			field("server", "地址", "IP"),
 			field("upstreamPort", "端口", "1–65535"),
 			field("upstreamUser", "用户", "可选"),

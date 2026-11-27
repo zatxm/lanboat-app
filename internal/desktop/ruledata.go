@@ -117,17 +117,26 @@ func (a *App) RunRuleUpdates(done <-chan struct{}) {
 	}
 }
 
-func (a *App) CountryIndex(previous string, index ruledata.CountryIndex) (string, ruledata.CountryIndex, error) {
-	a.ruleUpdateMu.Lock()
+func (a *App) CountryIndex() (ruledata.CountryIndex, error) {
+	// Flag lookup must not hold a node save behind a download or backup.
+	if !a.ruleUpdateMu.TryLock() {
+		return ruledata.CountryIndex{}, fmt.Errorf("rule data is busy")
+	}
 	defer a.ruleUpdateMu.Unlock()
 	root := a.ruleDataDir()
 	if err := ruledata.Ensure(root); err != nil {
-		return "", ruledata.CountryIndex{}, err
+		return ruledata.CountryIndex{}, err
 	}
 	dir, err := ruledata.Current(root)
-	if err != nil || dir == previous {
-		return previous, index, err
+	if err != nil {
+		return ruledata.CountryIndex{}, err
 	}
-	index, err = ruledata.LoadCountries(dir)
-	return dir, index, err
+	if dir == a.flagGeneration {
+		return a.flagIndex, nil
+	}
+	index, err := ruledata.LoadCountries(dir)
+	if err == nil {
+		a.flagGeneration, a.flagIndex = dir, index
+	}
+	return index, err
 }

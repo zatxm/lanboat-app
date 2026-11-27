@@ -3,6 +3,7 @@ package desktop
 import (
 	"errors"
 	"reflect"
+	"slices"
 
 	"github.com/zatxm/lanboat-app/internal/profile"
 )
@@ -26,7 +27,7 @@ func (a *App) checkActiveNode(c profile.Config) error {
 				break
 			}
 		}
-		if !reflect.DeepEqual(old, next) {
+		if !sameNodeConnection(old, next) {
 			return errors.New("正在使用的DNS出站节点不能修改或删除")
 		}
 	}
@@ -43,10 +44,15 @@ func (a *App) checkActiveNode(c profile.Config) error {
 			break
 		}
 	}
-	if !reflect.DeepEqual(before, after) {
+	if !sameNodeConnection(before, after) {
 		return errors.New("正在连接的节点不能修改或删除")
 	}
 	return nil
+}
+
+func sameNodeConnection(a, b profile.Node) bool {
+	a.Flag, b.Flag = "", ""
+	return reflect.DeepEqual(a, b)
 }
 
 func (a *App) applyConnectedConfig(c profile.Config, force bool, restoreData func() error) (func() error, error) {
@@ -60,7 +66,7 @@ func (a *App) applyConnectedConfig(c profile.Config, force bool, restoreData fun
 		return noop, nil
 	}
 	previous := a.config
-	nodeTargetsChanged := !reflect.DeepEqual(c.Nodes, previous.Nodes) && (profile.HasPolicyTargets(c) || profile.HasPolicyTargets(previous))
+	nodeTargetsChanged := !slices.EqualFunc(c.Nodes, previous.Nodes, sameNodeConnection) && (profile.HasPolicyTargets(c) || profile.HasPolicyTargets(previous))
 	restart := force && c.Settings.Mode == "rule" || nodeTargetsChanged || !reflect.DeepEqual(c.Settings.UDP, previous.Settings.UDP) || !reflect.DeepEqual(c.Settings.TCP, previous.Settings.TCP) || !reflect.DeepEqual(c.Settings.DNS, previous.Settings.DNS) || c.Selected != previous.Selected || c.Settings.Port != previous.Settings.Port || c.Settings.Mode != previous.Settings.Mode || c.Settings.Proxy != previous.Settings.Proxy
 	if !restart && (c.ActiveFile != previous.ActiveFile || !reflect.DeepEqual(c.Files, previous.Files) || !reflect.DeepEqual(c.Rules, previous.Rules) || !reflect.DeepEqual(c.RuleOverlays, previous.RuleOverlays) || !reflect.DeepEqual(c.PolicyGroups, previous.PolicyGroups) || c.Settings.Mode == "rule" && c.Settings.RuleRegion != previous.Settings.RuleRegion) {
 		old, err := profile.EffectiveRouting(previous)

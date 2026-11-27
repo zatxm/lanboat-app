@@ -186,9 +186,9 @@ func (v *nativeView) routingRuleFields(box *widget) {
 	for _, control := range []*widget{kind, value, policy} {
 		control.setExpand(true)
 	}
-	v.pack(box, v.compactFormRow("匹配类型", kind), v.compactFormRow("匹配内容", value), v.compactFormRow("策略", policy),
-		v.compactFormRow("不解析域名", v.switchInput("route.noResolve", "不解析域名")),
-		v.compactFormRow("停用规则", v.switchInput("route.disabled", "停用规则")))
+	v.pack(box, v.formRow("匹配类型", kind), v.formRow("匹配内容", value), v.formRow("策略", policy),
+		v.formRow("不解析域名", v.switchInput("route.noResolve", "不解析域名")),
+		v.formRow("停用规则", v.switchInput("route.disabled", "停用规则")))
 	v.dialogActions(box, u.saveRoutingRule)
 }
 func (v *nativeView) switchInput(key, title string) *widget {
@@ -206,7 +206,7 @@ func (v *nativeView) switchInput(key, title string) *widget {
 }
 
 func (v *nativeView) formSwitch(key, title string) *widget {
-	return v.box("", true, 12, false, v.label(title, "node-name"), v.spacer(), v.switchInput(key, title))
+	return v.formRow(title, v.switchInput(key, title))
 }
 func (v *nativeView) routingControlPage() {
 	u := v.ui
@@ -378,7 +378,7 @@ func (v *nativeView) routingTestPage() {
 	field := func(key, label, placeholder string) *widget {
 		input := v.input(key, placeholder, false, false, false)
 		input.setExpand(true)
-		return v.compactFormRow(label, input)
+		return v.formRow(label, input)
 	}
 	network := v.selectWidget(u.field("matchNetwork").Text(), []option{{"tcp", "TCP"}, {"udp", "UDP"}}, false, func(s string) { u.field("matchNetwork").SetText(s) })
 	network.setExpand(true)
@@ -386,9 +386,9 @@ func (v *nativeView) routingTestPage() {
 	v.pack(v.body, v.box("panel", false, 12, false,
 		field("matchHost", "域名", "example.com"),
 		field("matchIP", "IP地址（可选）", "1.1.1.1"),
-		v.compactFormRow("", v.label("需要测试IP规则时，请填写目标IP，域名可不填", "help")),
+		v.formRow("", v.label("需要测试IP规则时，请填写目标IP，域名可不填", "help")),
 		field("matchPort", "目标端口", "443"),
-		v.compactFormRow("网络协议", network),
+		v.formRow("网络协议", network),
 		field("matchAgent", "User-Agent（可选）", ""),
 		v.box("", true, 8, false, v.spacer(), v.button("测试规则", "primary icon-test", false, false, test))))
 	card := v.box("panel", false, 12, false, v.box("", true, 8, false, v.icon("route"), v.label("匹配结果", "field-label")), result)

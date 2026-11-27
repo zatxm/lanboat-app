@@ -36,6 +36,7 @@ type Node struct {
 	Options    map[string]any `json:"options,omitempty"`
 	ID         string         `json:"id"`
 	Name       string         `json:"name"`
+	Flag       string         `json:"flag,omitempty"`
 	Server     string         `json:"server"`
 	Port       int            `json:"port"`
 	Method     string         `json:"method"`

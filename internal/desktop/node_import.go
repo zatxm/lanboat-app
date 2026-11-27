@@ -189,6 +189,11 @@ func (a *App) subscriptionImportGroup(sub profile.Subscription) (importGroup, er
 }
 
 func (a *App) commitImport(groups []importGroup) (int, error) {
+	nodeGroups := make([][]profile.Node, len(groups))
+	for i := range groups {
+		nodeGroups[i] = groups[i].nodes
+	}
+	a.fillNodeFlags(nodeGroups...)
 	a.connectionMu.Lock()
 	defer a.connectionMu.Unlock()
 	a.mu.Lock()

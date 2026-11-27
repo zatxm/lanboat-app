@@ -87,7 +87,7 @@ func TestNativeWindowRuleDataSettings(t *testing.T) {
 	if u.field("ruleUpdate.auto").Text() != "false" || !u.state.Config.Settings.RulesAutoUpdate() {
 		t.Fatal("switch did not preserve draft")
 	}
-	if interval.parent.visible {
+	if interval.visible {
 		t.Fatal("disabled update interval still visible")
 	}
 	var save *widget
@@ -115,7 +115,7 @@ func TestNativeWindowRuleDataSettings(t *testing.T) {
 	auto.click()
 	pump()
 	interval = v.inputs["ruleUpdate.days"]
-	if interval == nil || !interval.parent.visible {
+	if interval == nil || !interval.visible {
 		t.Fatal("enabled update interval hidden")
 	}
 	interval.edit("7")

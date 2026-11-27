@@ -68,6 +68,7 @@ func (a *App) importNodeBundle(data string) (int, error) {
 			}
 		}
 	}
+	a.fillNodeFlags(b.Nodes)
 	a.connectionMu.Lock()
 	defer a.connectionMu.Unlock()
 	a.mu.Lock()

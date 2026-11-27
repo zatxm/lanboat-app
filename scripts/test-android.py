@@ -71,6 +71,21 @@ def main():
     def permission_button():
         return control_position(lambda node: node.get("resource-id") == "android:id/button1")
 
+    def content_repainted():
+        raw = read_device("exec-out", "screencap")
+        width, height, pixel_format = struct.unpack_from("<III", raw)
+        if pixel_format not in (1, 2):
+            raise RuntimeError(f"Unexpected Android screenshot format {pixel_format}")
+        pixels = memoryview(raw)[-4 * width * height:]
+        # Ignore the status and navigation bars, which are drawn even if Lanboat is blank.
+        stride = 4 * width
+        colors = {
+            bytes(pixels[y * stride + 4 * x:y * stride + 4 * x + 3])
+            for y in range(height // 12, height * 3 // 4, 8)
+            for x in range(width // 20, width * 19 // 20, 8)
+        }
+        return len(colors) > 8
+
     class Page(http.server.BaseHTTPRequestHandler):
         def do_GET(self):
             self.send_response(200)
@@ -140,6 +155,11 @@ def main():
                                f" | toybox nc -w 5 {TARGET} {target_port}")
                 if MARKER not in response or not forwarded.wait(5):
                     raise RuntimeError("The HTTP response did not traverse the SOCKS5 proxy")
+                read_device("shell", "am", "start", "-W", "-a", "android.settings.SETTINGS")
+                read_device("shell", "am", "start", "-W", "-n", ACTIVITY)
+                wait_for(content_repainted, "Android returned to a blank Lanboat window")
+                if not vpn_active():
+                    raise RuntimeError("Android VPN disconnected while switching apps")
                 if mode == "rule":
                     with open(args.screenshot, "wb") as image:
                         image.write(read_device("exec-out", "screencap", "-p"))

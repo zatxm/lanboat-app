@@ -5,7 +5,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/zatxm/fego/v26/ui"
 	"github.com/zatxm/lanboat-app/internal/profile"
 )
 
@@ -140,30 +139,12 @@ func (v *nativeView) dnsToolbar() *widget {
 
 func (v *nativeView) dnsFields(box *widget) {
 	u := v.ui
-	labelWidth := float32(104)
-	if u.state.Config.Settings.Language == "en" {
-		labelWidth = 130
-	}
-	fieldRow := func(title string, control *widget, trailing ...*widget) *widget {
-		label := v.box("", true, 0, false, v.label(title, "field-label"))
-		label.pointer.Width(labelWidth).Justify(ui.End)
-		row := v.box("", true, 12, false, label, control)
-		v.pack(row, trailing...)
-		if control.kind == "text" {
-			row.pointer.AlignItems(ui.Start)
-			label.pointer.Padding(10, 0, 0, 0)
-		}
-		return row
-	}
+	fieldRow := v.formRow
 	textField := func(key, placeholder string) *widget {
-		input := v.input("dns."+key, placeholder, false, false, false)
-		input.setClasses("dns-control")
-		return input
+		return v.input("dns."+key, placeholder, false, false, false)
 	}
 	fullField := func(key, placeholder string, multiline bool) *widget {
-		input := v.input("dns."+key, placeholder, multiline, false, false)
-		input.setExpand(true)
-		return input
+		return v.input("dns."+key, placeholder, multiline, false, false)
 	}
 	switchField := func(title, key string) *widget {
 		return fieldRow(title, v.dnsSwitch(title, key))
@@ -175,7 +156,6 @@ func (v *nativeView) dnsFields(box *widget) {
 				u.render()
 			}
 		})
-		choice.setClasses("dns-control")
 		return fieldRow(title, choice)
 	}
 	layer := func(title, description string, children ...*widget) {
@@ -199,14 +179,13 @@ func (v *nativeView) dnsFields(box *widget) {
 		}
 		u.render()
 	})
-	bootstrap.pointer.Width(148)
-	bootstrapRow := v.box("", true, 12, false, bootstrap)
+	bootstrapRow := v.box("", false, 12, false, fieldRow("引导解析", bootstrap))
 	if bootstrapMode == "ip" || bootstrapMode == "protocol" {
 		example := dnsBootstrapIP
 		if bootstrapMode == "protocol" {
 			example = dnsBootstrapURL
 		}
-		v.pack(bootstrapRow, fullField("bootstrap", example, false))
+		v.pack(bootstrapRow, fieldRow("服务器", fullField("bootstrap", example, false)))
 	}
 	layer("引导解析", "", bootstrapRow, v.label(
 		"解析DNS及节点服务器域名，避免循环依赖。\n带协议IP还可以填写如https://1.1.1.1/dns-query或udp://[2606:4700:4700::1111]。",
@@ -226,12 +205,6 @@ func (v *nativeView) dnsFields(box *widget) {
 		v.label("从上到下匹配，优先于路由文件中的域名规则。", "help")))
 
 	resolvers := v.box("", false, 12, false)
-	resolverRow := func(title string, control *widget) *widget {
-		control.pointer.Width(320)
-		slot := v.box("", false, 0, true, control)
-		slot.pointer.AlignItems(ui.Start)
-		return fieldRow(title, slot)
-	}
 	resolver := func(key, title string) {
 		current := u.field("dns." + key).Text()
 		normal := []option{{"system", "系统DNS"}, {"custom", "自定义"}}
@@ -259,7 +232,7 @@ func (v *nativeView) dnsFields(box *widget) {
 			u.prepareDNSResolver(key)
 			u.render()
 		})
-		v.pack(resolvers, resolverRow(title, choice))
+		v.pack(resolvers, fieldRow(title, choice))
 		if mode == "custom" {
 			protocols := []option{{"local", "System"}, {"udp", "UDP"}, {"tcp", "TCP"}, {"tls", "DoT"}, {"https", "DoH"}, {"quic", "DoQ"}, {"h3", "HTTP/3"}}
 			typ := v.selectWidget(u.field("dns."+key+"Type").Text(), protocols, false, func(value string) {
@@ -283,7 +256,7 @@ func (v *nativeView) dnsFields(box *widget) {
 				u.prepareDNSResolver(key)
 				u.render()
 			})
-			v.pack(resolvers, resolverRow("协议", typ))
+			v.pack(resolvers, fieldRow("协议", typ))
 			if u.field("dns."+key+"Type").Text() == "local" {
 				return
 			}
@@ -297,7 +270,7 @@ func (v *nativeView) dnsFields(box *widget) {
 					u.field("dns." + key).SetText(kind + "://" + value)
 				}
 			}
-			v.pack(resolvers, resolverRow("服务器", input), fieldRow("", v.label("Bootstrap：自动使用引导DNS", "help")))
+			v.pack(resolvers, fieldRow("服务器", input), fieldRow("", v.label("Bootstrap：自动使用引导DNS", "help")))
 		}
 	}
 	resolver("direct", "直连DNS")

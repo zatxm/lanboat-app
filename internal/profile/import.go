@@ -809,6 +809,7 @@ func importClashNodeOptions(n *Node, values map[string]any) error {
 func protocolURI(n Node) string {
 	n.ID = ""
 	n.Source = ""
+	n.Flag = ""
 	data, _ := json.Marshal(n)
 	return "lanboat://" + base64.RawURLEncoding.EncodeToString(data)
 }

@@ -3,44 +3,16 @@ package native
 import (
 	"strings"
 
-	"github.com/zatxm/fego/v26/ui"
 	"github.com/zatxm/lanboat-app/internal/engine"
 	"github.com/zatxm/lanboat-app/internal/profile"
 )
 
 func (v *nativeView) nodeRow(title string, control *widget, below ...*widget) *widget {
-	label := v.box("node-field-key", true, 0, false, v.label(title, "field-label"))
-	label.pointer.Justify(ui.End)
-	if len(below) > 0 {
-		label.pointer.Height(38)
-		column := v.box("", false, 7, true, control)
-		column.pointer.AlignItems(ui.Stretch)
-		v.pack(column, below...)
-		row := v.box("field", true, 12, false, label, column)
-		row.pointer.AlignItems(ui.Start)
+	row := v.formRow(title, control)
+	if len(below) == 0 {
 		return row
 	}
-	if !hasClass(control.classes, "switch") {
-		control.setExpand(true)
-	}
-	return v.box("field", true, 12, false, label, control)
-}
-
-// Fego measures translated labels in the actual window font. Include the
-// inset of nested option groups so their controls also share the same edge.
-func (v *nativeView) alignNodeFields() {
-	var keys []*ui.Element
-	var right float32
-	for _, w := range v.widgets {
-		if w.classes == "node-field-key" {
-			r := w.pointer.Bounds()
-			right = max(right, r.X+r.W)
-			keys = append(keys, w.pointer)
-		}
-	}
-	for _, key := range keys {
-		key.Width(right - key.Bounds().X)
-	}
+	return v.box("", false, 8, false, append([]*widget{row}, below...)...)
 }
 
 func conditionalNodeField(key string) bool {
@@ -101,7 +73,7 @@ func (v *nativeView) detailedNodeFields(box *widget) {
 		v.pack(box, v.field("password", title, hint, true))
 	}
 	v.packNodeFields(box, fields)
-	v.pack(box, v.field("name", "备注", "可选", false))
+	v.pack(box, v.remarkField("可选"))
 	issue := v.label("", "help")
 	issue.update = func() {
 		n := u.draft.Clone()

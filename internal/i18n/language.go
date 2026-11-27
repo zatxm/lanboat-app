@@ -4,12 +4,25 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 )
+
+type localeInfo struct{ zone, language string }
+
+var platformLocale atomic.Pointer[localeInfo]
+
+// SetSystemLocale supplies information from mobile hosts that lack POSIX locale files.
+func SetSystemLocale(zone, language string) {
+	platformLocale.Store(&localeInfo{zone, language})
+}
 
 // DefaultLanguage uses a geographic timezone first, then the system locale.
 // UTC and fixed offsets do not identify a country.
 func DefaultLanguage() string {
+	if locale := platformLocale.Load(); locale != nil {
+		return detectLanguage(locale.zone, locale.language)
+	}
 	zone := strings.TrimPrefix(os.Getenv("TZ"), ":")
 	if zone == "" {
 		if path, err := filepath.EvalSymlinks("/etc/localtime"); err == nil {
@@ -48,6 +61,9 @@ func detectLanguage(zone, locale string) string {
 	locale = strings.ToUpper(strings.ReplaceAll(locale, "-", "_"))
 	if parts := strings.FieldsFunc(locale, func(r rune) bool { return r == '.' || r == '@' || r == ':' }); len(parts) > 0 {
 		locale = parts[0]
+	}
+	if locale == "ZH" || locale == "ZH_HANS" || locale == "ZH_HANT" {
+		return "zh"
 	}
 	for _, part := range strings.Split(locale, "_") {
 		switch part {

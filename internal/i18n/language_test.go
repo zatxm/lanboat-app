@@ -29,3 +29,20 @@ func TestDefaultLanguageSignals(t *testing.T) {
 		t.Fatal("LC_MESSAGES precedence")
 	}
 }
+
+func TestMobileSystemLanguage(t *testing.T) {
+	t.Cleanup(func() { platformLocale.Store(nil) })
+	t.Setenv("LANG", "en_US.UTF-8")
+	SetSystemLocale("Asia/Shanghai", "en-US")
+	if DefaultLanguage() != "zh" {
+		t.Fatal("mobile timezone should initialize the Chinese language")
+	}
+	SetSystemLocale("Etc/UTC", "zh-Hant")
+	if DefaultLanguage() != "zh" {
+		t.Fatal("mobile Chinese locale without a country should initialize the Chinese language")
+	}
+	SetSystemLocale("America/New_York", "en-US")
+	if DefaultLanguage() != "en" {
+		t.Fatal("mobile locale should initialize the English language")
+	}
+}

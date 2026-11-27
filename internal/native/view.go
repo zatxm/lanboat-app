@@ -13,8 +13,6 @@ import (
 	"github.com/zatxm/lanboat-app/internal/profile"
 )
 
-const linuxWindowTitle = "⛵︎ Lanboat"
-
 var pages = []option{{"home", "首页"}, {"data", "数据"}, {"settings", "设置"}}
 var modes = []option{{"rule", "规则"}, {"global", "全局"}, {"tun", "全局+TUN"}}
 
@@ -77,10 +75,12 @@ func (v *nativeView) input(id, placeholder string, multiline, secret, readOnly b
 }
 func (v *nativeView) field(id, title, placeholder string, secret bool) *widget {
 	input := v.input(id, placeholder, false, secret, false)
-	if v.ui.editor == "node" {
-		return v.nodeRow(title, input)
-	}
-	return v.box("field", false, 7, false, v.label(title, "field-label"), input)
+	return v.formRow(title, input)
+}
+func (v *nativeView) remarkField(placeholder string) *widget {
+	input := v.input("name", placeholder, true, false, false)
+	input.pointer.Height(76)
+	return v.formRow("备注", input)
 }
 func (v *nativeView) selectWidget(current string, options []option, config bool, changed func(string)) *widget {
 	w := v.create("select", props{})
@@ -95,7 +95,7 @@ func (v *nativeView) selectWidget(current string, options []option, config bool,
 	return w
 }
 func (v *nativeView) selectField(title, current string, options []option, changed func(string)) *widget {
-	return v.box("field", false, 7, false, v.label(title, "field-label"), v.selectWidget(current, options, false, changed))
+	return v.formRow(title, v.selectWidget(current, options, false, changed))
 }
 func (v *nativeView) icon(name string) *widget { return v.create("icon", props{text: name}) }
 func (v *nativeView) buildRoot() {
@@ -234,6 +234,7 @@ func (v *nativeView) render() {
 	v.power = nil
 	v.routing = nil
 	v.nodeContainer = nil
+	v.nodeViewport, v.mobileNodes, v.mobileRows = nil, nil, nil
 	v.exportNodes = nil
 	v.nodeScroll = nil
 	v.logContainer = nil
@@ -296,19 +297,14 @@ func (v *nativeView) render() {
 
 	v.show()
 	v.refresh()
-	if u.editor == "node" || v.editorScroll != nil && formOffset > 0 {
+	if v.editorScroll != nil && formOffset > 0 {
 		// Measure the new fields and scroll viewport before using their bounds.
 		if v.tester != nil {
 			v.tester.Step()
 		} else if painter, ok := v.events.(interface{ PaintIfDirty() }); ok {
 			painter.PaintIfDirty()
 		}
-		if u.editor == "node" {
-			v.alignNodeFields()
-		}
-		if formOffset > 0 {
-			v.editorScroll.scrollPosition(formOffset)
-		}
+		v.editorScroll.scrollPosition(formOffset)
 	}
 	if u.resetScroll {
 		v.top()
@@ -368,7 +364,7 @@ func (v *nativeView) refresh() {
 			w.setEnabled(false)
 		}
 	}
-	u.refreshFlags(v.nodeContainer != nil)
+	v.refreshMobileNodeRows()
 	if v.power != nil {
 		v.power.setEnabled(!u.busy && (u.status.Connected || u.state.Config.Selected != ""))
 		power := "开启连接"
@@ -400,7 +396,6 @@ func (v *nativeView) refresh() {
 	if v.logContainer != nil {
 		v.refreshNetworkLogs()
 	}
-	v.alignCompactForm()
 }
 func (v *nativeView) routingModes() []option {
 	if v.mobile {
@@ -476,29 +471,39 @@ func (v *nativeView) home() {
 		nodeToolbar = v.box("home-toolbar", true, 4, false, settings, v.spacer(), actions)
 	}
 	searchField := v.searchBox("search", "搜索节点", func() {
-		v.nodeScroll.scrollPosition(0)
+		if v.mobileNodes != nil {
+			v.mobileNodes.ScrollTo(0)
+		} else {
+			v.nodeScroll.scrollPosition(0)
+		}
 		u.nodesDirty = true
 		u.notify()
 	})
 	v.nodeContainer = v.box("", false, 18, false)
 	v.nodeScroll = v.create("scroll", props{expand: true})
 	v.pack(v.nodeScroll, v.nodeContainer)
-	v.pack(v.body, nodeToolbar, searchField, v.nodeScroll)
+	if v.mobile {
+		v.nodeViewport = v.box("", false, 0, true, v.nodeScroll)
+		v.pack(v.body, nodeToolbar, searchField, v.nodeViewport)
+	} else {
+		v.pack(v.body, nodeToolbar, searchField, v.nodeScroll)
+	}
 	v.renderNodes()
 }
 func (v *nativeView) renderNodes() {
 	u := v.ui
 	v.clear(v.nodeContainer)
+	v.mobileNodes, v.mobileRows = nil, nil
 	v.delayLabels = map[string]*widget{}
 	query := u.field("search").Text()
-	u.flagHosts = nil
-	hosts := map[string]bool{}
 	sources := map[string]bool{}
 	for _, s := range u.state.Config.Subscriptions {
 		sources[s.ID] = true
 	}
-	grouped := make(map[string][]profile.Node, len(sources)+1)
-	for _, n := range filterNodes(u.state.Config.Nodes, query) {
+	grouped := make(map[string][]*profile.Node, len(sources)+1)
+	matched := filterNodes(u.state.Config.Nodes, query)
+	for i := range matched {
+		n := &matched[i]
 		id := n.Source
 		if !sources[id] {
 			id = ""
@@ -507,6 +512,20 @@ func (v *nativeView) renderNodes() {
 	}
 	groups := []profile.Subscription{{ID: "", Name: "本地节点"}}
 	groups = append(groups, u.state.Config.Subscriptions...)
+	virtual := false
+	if v.nodeViewport != nil {
+		expandedCount := 0
+		for _, g := range groups {
+			if u.expanded[g.ID] || query != "" {
+				expandedCount += len(grouped[g.ID])
+			}
+		}
+		virtual = expandedCount > 128
+		if !virtual {
+			v.nodeViewport.pointer.Children(v.nodeScroll.pointer)
+		}
+	}
+	var entries []mobileNodeEntry
 	panels := make([]*widget, 0, len(groups))
 	for _, group := range groups {
 		g := group
@@ -553,91 +572,99 @@ func (v *nativeView) renderNodes() {
 			v.pack(header, v.button("分享订阅", "link icon-only icon-share", false, false, func() { u.share("subscription", g.ID, g.Name) }))
 			v.pack(header, v.button("删除订阅", "link danger icon-only icon-delete", true, false, func() { u.confirm = &deletion{kind: "subscription", id: g.ID, name: g.Name}; u.notify() }))
 		}
+		if virtual {
+			v.pack(panel, header)
+			panel.parent = v.nodeContainer
+			entries = append(entries, mobileNodeEntry{title: g.Name, header: panel.pointer})
+			if expanded {
+				for i := range nodes {
+					entries = append(entries, mobileNodeEntry{node: nodes[i], last: i == count-1, local: g.ID == ""})
+				}
+			}
+			continue
+		}
 		rows := []*widget{header}
 		if expanded {
 			rows = slices.Grow(rows, count*2)
 			for i, n := range nodes {
-				class := "node-row home-node-row"
-				last := i == count-1
-				if last {
-					class += " home-node-last"
-				}
-				selected := u.state.Config.Selected
-				if u.status.Connected && u.status.ActiveNode != "" {
-					selected = u.status.ActiveNode
-				}
-				if n.ID == selected {
-					class += " node-selected"
-				}
-				delay := v.label(nodeDelayText(u.delays, n.ID), "help")
+				row, delay := v.homeNodeRow(*n, i == count-1, g.ID == "")
 				v.delayLabels[n.ID] = delay
-				if n.Server != "" && !hosts[n.Server] {
-					u.flagHosts = append(u.flagHosts, n.Server)
-					hosts[n.Server] = true
-				}
-				name, country := splitNodeFlag(n.Name)
-				flag := v.countryIcon(n.Server, country)
-				detail := v.button("节点详情", "link icon-only icon-info", false, false, func() { u.editNode(n) })
-				offline := v.icon("unreachable")
-				offline.setTooltip("节点连通性测试失败")
-				status := v.box("node-measurement", true, 0, false, delay, offline)
-				offline.update = func() {
-					active := u.status.Connected && u.status.ActiveNode == n.ID
-					failed := active && u.connectedDelay < 0
-					offline.setVisible(failed)
-					delay.setVisible(!failed)
-					text := nodeDelayText(u.delays, n.ID)
-					if active {
-						text = ""
-						if u.connectedDelay > 0 {
-							text = fmt.Sprintf("%dms", u.connectedDelay)
-						}
-					}
-					delay.setText(text)
-				}
-				row := v.box(class, true, 8, false, flag,
-					v.box("", false, 4, true, v.dataLabel(name, "node-name node-title"), v.dataLabel(nodeDescription(n), "help")),
-					status, detail,
-					v.button("分享节点", "link icon-only icon-share", false, false, func() { u.share("node", n.ID, n.Name) }))
-				if g.ID == "" {
-					v.pack(row, v.button("复制节点", "link icon-only icon-copy", true, false, func() {
-						u.submit(func() error { return u.backend.CopyNode(n.ID) }, nil)
-					}))
-				}
-				v.pack(row, v.button("删除节点", "link danger icon-only icon-delete", true, false, func() {
-					u.confirm = &deletion{kind: "node", id: n.ID, name: n.Name}
-					u.notify()
-				}))
-				row.update = func() {
-					selected := u.state.Config.Selected
-					if u.status.Connected && u.status.ActiveNode != "" {
-						selected = u.status.ActiveNode
-					}
-					class := "node-row home-node-row"
-					if last {
-						class += " home-node-last"
-					}
-					if selected == n.ID {
-						class += " node-selected"
-					}
-					row.setClasses(class)
-				}
-				row.text = n.Name
-				row.event = func(event, value string) {
-					if !u.locked() {
-						u.submit(func() error { return u.backend.SelectNode(n.ID) }, nil)
-					}
-				}
-				v.controls = append(v.controls, control{row, false, false})
 				rows = append(rows, v.create("separator", props{}), row)
 			}
 		}
 		v.pack(panel, rows...)
 		panels = append(panels, panel)
 	}
-	if len(panels) != 0 {
+	if virtual {
+		v.buildMobileNodes(entries)
+	} else if len(panels) != 0 {
 		v.pack(v.nodeContainer, panels...)
 	}
+}
+
+func (v *nativeView) homeNodeRow(n profile.Node, last, local bool) (row, delay *widget) {
+	u := v.ui
+	delay = v.label("", "help")
+	name, _ := profile.SplitNodeFlag(n.Name)
+	detail := v.button("节点详情", "link icon-only icon-info", false, false, func() { u.editNode(n) })
+	offline := v.icon("unreachable")
+	offline.setTooltip("节点连通性测试失败")
+	status := v.box("node-measurement", true, 0, false, delay, offline)
+	offline.update = func() {
+		active := u.status.Connected && u.status.ActiveNode == n.ID
+		failed := active && u.connectedDelay < 0
+		offline.setVisible(failed)
+		delay.setVisible(!failed)
+		text := nodeDelayText(u.delays, n.ID)
+		if active {
+			text = ""
+			if u.connectedDelay > 0 {
+				text = fmt.Sprintf("%dms", u.connectedDelay)
+			}
+		}
+		delay.setText(text)
+	}
+	row = v.box("node-row home-node-row", true, 8, false)
+	if code := profile.NodeFlagCountry(n.Flag); code != "" {
+		v.pack(row, v.countryIcon(code))
+	}
+	v.pack(row,
+		v.box("", false, 4, true, v.dataLabel(name, "node-name node-title"), v.dataLabel(nodeDescription(n), "help")),
+		status, detail,
+		v.button("分享节点", "link icon-only icon-share", false, false, func() { u.share("node", n.ID, n.Name) }))
+	if local {
+		v.pack(row, v.button("复制节点", "link icon-only icon-copy", true, false, func() {
+			u.submit(func() error { return u.backend.CopyNode(n.ID) }, nil)
+		}))
+	}
+	v.pack(row, v.button("删除节点", "link danger icon-only icon-delete", true, false, func() {
+		u.confirm = &deletion{kind: "node", id: n.ID, name: n.Name}
+		u.notify()
+	}))
+	row.update = func() {
+		selected := u.state.Config.Selected
+		if u.status.Connected && u.status.ActiveNode != "" {
+			selected = u.status.ActiveNode
+		}
+		class := "node-row home-node-row"
+		if last {
+			class += " home-node-last"
+		}
+		if selected == n.ID {
+			class += " node-selected"
+		}
+		row.setClasses(class)
+	}
+	row.update()
+	offline.update()
+	row.text = n.Name
+	row.event = func(event, value string) {
+		if !u.locked() {
+			u.submit(func() error { return u.backend.SelectNode(n.ID) }, nil)
+		}
+	}
+	v.controls = append(v.controls, control{row, false, false})
+	return row, delay
 }
 
 func nodeDelayText(delays map[string]int64, id string) string {
@@ -720,8 +747,8 @@ func (v *nativeView) customRuleEditor(box *widget) {
 	for _, input := range []*widget{kind, value, policy} {
 		input.setExpand(true)
 	}
-	v.pack(box, v.compactFormRow("匹配类型", kind), v.compactFormRow("匹配内容", value), v.compactFormRow("策略", policy),
-		v.compactFormRow("不解析域名", v.switchInput("custom.noResolve", "不解析域名")),
+	v.pack(box, v.formRow("匹配类型", kind), v.formRow("匹配内容", value), v.formRow("策略", policy),
+		v.formRow("不解析域名", v.switchInput("custom.noResolve", "不解析域名")),
 		v.box("", true, 10, false, v.spacer(), v.button("确定", "primary icon-check", false, false, u.saveCustomRule)))
 }
 
@@ -798,7 +825,7 @@ func (v *nativeView) editor() *widget {
 			v.detailedNodeFields(box)
 			break
 		}
-		v.pack(box, v.field("name", "备注", "", false))
+		v.pack(box, v.remarkField(""))
 		if u.draft.Kind() != "tailscale" {
 			v.pack(box, v.field("server", "服务器（域名或 IP）", "", false), v.field("nodePort", "端口", "", false))
 		}
@@ -832,7 +859,7 @@ func (v *nativeView) editor() *widget {
 	case "config-import":
 		v.configImportFields(box)
 	case "restore-backup":
-		v.pack(box, v.box("field", false, 8, false, v.label("备份文件路径或 JSON 内容（恢复会替换现有数据）", "field-label"), v.input("content", "", true, false, false)))
+		v.pack(box, v.formRow("备份文件路径或 JSON 内容（恢复会替换现有数据）", v.input("content", "", true, false, false)))
 	}
 	if u.editor == "config-file" || u.editor == "config-view" || u.editor == "config-import" || u.editor == "import" || u.editor == "dns-settings" {
 		return frame
@@ -864,7 +891,7 @@ func (v *nativeView) subscriptionFields(box *widget) {
 	v.pack(box, v.field("subPassword", password, "可选", true), v.field("subFilter", "过滤", "关键字或正则表达式", false))
 	v.inputs["subPassword"].setTooltip("用于解密订阅内容，不会发送给订阅服务器")
 	v.inputs["subFilter"].setTooltip("按节点备注匹配，忽略大小写")
-	v.pack(box, v.nodeRow("保留分流规则", v.switchInput("subKeepRules", "保留分流规则")), v.field("name", "备注", "留空使用订阅域名", false))
+	v.pack(box, v.nodeRow("保留分流规则", v.switchInput("subKeepRules", "保留分流规则")), v.remarkField("留空使用订阅域名"))
 }
 
 func nodeDescription(n profile.Node) string {

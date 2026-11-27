@@ -75,7 +75,11 @@ PY
         export ANDROID_KEY_PASSWORD=${ANDROID_KEY_PASSWORD:-$ANDROID_KEYSTORE_PASSWORD}
         sign=(--ks "$ANDROID_KEYSTORE" --ks-key-alias "$ANDROID_KEY_ALIAS" --ks-pass env:ANDROID_KEYSTORE_PASSWORD --key-pass env:ANDROID_KEY_PASSWORD)
     fi
+    mkdir -p "$tmp/res/mipmap-xxxhdpi"
+    cp packaging/icons/256x256/lanboat.png "$tmp/res/mipmap-xxxhdpi/lanboat.png"
+    "$tools/aapt2" compile --dir "$tmp/res" -o "$tmp/resources.zip"
     "$tools/aapt2" link -I "$jarfile" --manifest mobile/android/AndroidManifest.xml \
+        -R "$tmp/resources.zip" \
         --rename-manifest-package "$bundle_id" --version-name "$version" --version-code "$build_number" \
         --replace-version "${manifest_opts[@]}" -o "$tmp/base.apk"
     (cd "$tmp/apk" && zip -q -0 -r "$tmp/base.apk" classes.dex lib)
@@ -115,7 +119,7 @@ ios)
         "$tmp/PacketTunnel.a" "${frameworks[@]}" -o "$tunnel/PacketTunnel"
 
     python3 - "$fegodir/mobile/ios/Info.plist" "$app" "$bundle_id" "$version" "$build_number" "$deployment" "$sdk" <<'PY'
-import pathlib, plistlib, sys
+import pathlib, plistlib, subprocess, sys
 
 template, bundle, identifier, version, build, minimum, sdk = sys.argv[1:]
 platforms = ['iPhoneSimulator' if sdk == 'iphonesimulator' else 'iPhoneOS']
@@ -125,6 +129,14 @@ with open(template, 'rb') as f:
 config.update(CFBundleIdentifier=identifier, CFBundleExecutable='Lanboat', CFBundleName='Lanboat',
               CFBundleVersion=build, CFBundleShortVersionString=version, MinimumOSVersion=minimum,
               CFBundleSupportedPlatforms=platforms)
+for key, icons in (
+    ('CFBundleIcons', [('LanboatIcon@2x.png', 120), ('LanboatIcon@3x.png', 180)]),
+    ('CFBundleIcons~ipad', [('LanboatPadIcon@2x.png', 152), ('LanboatPadProIcon@2x.png', 167)]),
+):
+    config[key] = {'CFBundlePrimaryIcon': {'CFBundleIconFiles': [name for name, _ in icons]}}
+    for name, size in icons:
+        subprocess.run(['sips', '-z', str(size), str(size), 'packaging/icons/256x256/lanboat.png',
+                        '--out', str(root / name)], check=True, stdout=subprocess.DEVNULL)
 scene = config['UIApplicationSceneManifest']['UISceneConfigurations']['UIWindowSceneSessionRoleApplication'][0]
 scene.update(UISceneConfigurationName='Lanboat', UISceneDelegateClassName='LanboatScene')
 with (root / 'Info.plist').open('wb') as f:

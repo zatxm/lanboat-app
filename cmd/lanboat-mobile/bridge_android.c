@@ -6,18 +6,24 @@
 static JavaVM *vm;
 static jclass bridge;
 
-extern void LanboatHome(char *);
+extern void LanboatHome(char *, char *, char *);
 extern int LanboatAndroidAttached(int64_t, int);
 extern void LanboatAndroidRevoked(int64_t);
 
-JNIEXPORT void JNICALL Java_org_lanboat_mobile_LanboatBridge_init(JNIEnv *env, jclass cls, jstring home) {
+JNIEXPORT void JNICALL Java_org_lanboat_mobile_LanboatBridge_init(JNIEnv *env, jclass cls, jstring home, jstring zone, jstring language) {
     if (vm == NULL) {
         (*env)->GetJavaVM(env, &vm);
         bridge = (*env)->NewGlobalRef(env, cls);
     }
     const char *path = (*env)->GetStringUTFChars(env, home, NULL);
     if (path != NULL) {
-        LanboatHome((char *)path);
+        const char *tz = (*env)->GetStringUTFChars(env, zone, NULL);
+        const char *locale = tz ? (*env)->GetStringUTFChars(env, language, NULL) : NULL;
+        if (locale) {
+            LanboatHome((char *)path, (char *)tz, (char *)locale);
+            (*env)->ReleaseStringUTFChars(env, language, locale);
+        }
+        if (tz) (*env)->ReleaseStringUTFChars(env, zone, tz);
         (*env)->ReleaseStringUTFChars(env, home, path);
     }
 }

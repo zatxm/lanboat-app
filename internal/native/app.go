@@ -13,7 +13,6 @@ import (
 
 	"github.com/zatxm/lanboat-app/internal/desktop"
 	"github.com/zatxm/lanboat-app/internal/profile"
-	"github.com/zatxm/lanboat-app/internal/ruledata"
 	"github.com/zatxm/lanboat-app/internal/traffic"
 )
 
@@ -41,16 +40,11 @@ type deletion struct {
 	run            func()
 }
 type UI struct {
-	flags                              map[string]flagEntry
-	flagGeneration                     string
-	flagIndex                          ruledata.CountryIndex
-	flagsEnabled, flagsBusy            bool
-	flagHosts                          []string
+	flagsEnabled                       bool
 	networkQuery                       atomic.Value
 	networkPolling                     atomic.Bool
 	appLogPolling                      atomic.Bool
 	memoryVisible                      atomic.Bool
-	flagDeadline                       atomic.Int64
 	networkPage                        traffic.Page
 	logRequest                         uint64
 	logControl                         int
@@ -86,11 +80,12 @@ type UI struct {
 	notify                             func()
 	view                               *nativeView
 	dirty, nodesDirty, resetScroll     bool
+	fileDialogOpen                     bool
 	focus                              string
 }
 
 func newUI(backend *desktop.App, notify func()) *UI {
-	u := &UI{flags: map[string]flagEntry{}, backend: backend, page: "home", expanded: map[string]bool{"": true}, fields: map[string]*field{}, delays: map[string]int64{}, updates: make(chan update, 4), done: make(chan struct{}), notify: notify}
+	u := &UI{backend: backend, page: "home", expanded: map[string]bool{"": true}, fields: map[string]*field{}, delays: map[string]int64{}, updates: make(chan update, 4), done: make(chan struct{}), notify: notify}
 	u.networkQuery.Store(logQuery{Kind: "proxy"})
 	u.networkPage.Kind = "proxy"
 	u.state = backend.GetState()
@@ -148,11 +143,9 @@ func (u *UI) poll() {
 		select {
 		case <-u.done:
 			return
-		case now := <-ticker.C:
+		case <-ticker.C:
 			version := u.version.Load()
 			status := u.snapshot()
-			deadline := u.flagDeadline.Load()
-			flagsDue := deadline != 0 && now.UnixNano() >= deadline
 			next := update{version: version, status: status}
 			if u.networkPolling.Load() {
 				q := u.networkQuery.Load().(logQuery)
@@ -161,7 +154,7 @@ func (u *UI) poll() {
 					next.networkQuery = q
 				}
 			}
-			if status == lastStatus && version == lastVersion && !flagsDue &&
+			if status == lastStatus && version == lastVersion &&
 				next.network == nil && !u.appLogPolling.Load() && !(u.traffic.Load() && status.Connected) {
 				continue
 			}
@@ -523,7 +516,16 @@ func (u *UI) saveEditor() {
 			}
 			n.SetOption(spec.Key, v)
 		}
-		fn = func() error { return u.backend.SaveNode(n) }
+		if n.Server != u.draft.Server || profile.NodeFlagCountry(n.Flag) == "" {
+			n.Flag = ""
+		}
+		lookupFlag := u.flagsEnabled && n.Flag == ""
+		fn = func() error {
+			if lookupFlag {
+				n.Flag = u.backend.ResolveNodeFlag(n.Server)
+			}
+			return u.backend.SaveNode(n)
+		}
 	case "dns-settings":
 		u.saveDNS()
 		return

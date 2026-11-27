@@ -31,13 +31,12 @@ func (v *nativeView) ruleUpdateEditor(box *widget) {
 	choice := v.selectWidget(u.field("ruleUpdate.days").Text(), opts, false, func(value string) { u.field("ruleUpdate.days").SetText(value) })
 	choice.pointer.Width(112)
 	v.inputs["ruleUpdate.days"] = choice
-	interval := v.compactFormRow("更新间隔", choice)
+	interval := v.formRow("更新间隔", choice)
 	interval.setVisible(u.field("ruleUpdate.auto").Text() == "true")
 	toggle := v.button("自动更新", "switch", false, false, func() {
 		enabled := u.field("ruleUpdate.auto").Text() != "true"
 		u.field("ruleUpdate.auto").SetText(strconv.FormatBool(enabled))
 		interval.setVisible(enabled)
-		v.formAlignmentPending = true
 		fitNativeDialog()
 	})
 	toggle.update = func() {
@@ -47,6 +46,6 @@ func (v *nativeView) ruleUpdateEditor(box *widget) {
 		}
 		toggle.setClasses(class)
 	}
-	v.pack(box, v.compactFormRow("自动更新", toggle), interval)
+	v.pack(box, v.formRow("自动更新", toggle), interval)
 	v.dialogActions(box, u.saveRuleUpdate)
 }

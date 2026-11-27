@@ -31,6 +31,8 @@ import (
 
 type App struct {
 	ruleUpdateMu     sync.Mutex
+	flagGeneration   string
+	flagIndex        ruledata.CountryIndex
 	connectionMu     sync.Mutex
 	connectionCtx    context.Context
 	connectionCancel context.CancelFunc
@@ -308,6 +310,9 @@ func (a *App) SaveNode(n profile.Node) error {
 				}
 				index = i
 				n.Source = old.Source
+				if n.Flag == "" && n.Server == old.Server {
+					n.Flag = old.Flag
+				}
 				if n.Password == "" && n.Kind() == old.Kind() {
 					n.Password = old.Password
 				}
@@ -338,6 +343,7 @@ func (a *App) SaveNode(n profile.Node) error {
 	if err := n.Validate(); err != nil {
 		return err
 	}
+	n.FillFlagFromName()
 	if index >= 0 {
 		c.Nodes[index] = n
 	} else {
@@ -646,6 +652,7 @@ func (a *App) refresh(sub profile.Subscription, create bool) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	a.fillNodeFlags(nodes)
 	a.connectionMu.Lock()
 	defer a.connectionMu.Unlock()
 	a.mu.Lock()
@@ -666,6 +673,9 @@ func (a *App) refresh(sub profile.Subscription, create bool) (int, error) {
 		nodes[i].Source = sub.ID
 		if prior, ok := old[profile.URI(nodes[i])]; ok {
 			nodes[i].ID = prior.ID
+			if prior.Flag != "" {
+				nodes[i].Flag = prior.Flag
+			}
 			if prior.ID == a.activeNode && a.connectionCancel != nil {
 				nodes[i] = prior
 				activeRetained = true

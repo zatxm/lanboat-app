@@ -55,13 +55,13 @@ func (v *nativeView) udpEditor(box *widget) {
 			b.setClasses(class)
 		}
 		b.setTooltip(hint)
-		return v.box("", false, 8, false, v.alignedSetting(title, b), v.label(hint, "help"))
+		return v.box("", false, 8, false, v.formRow(title, b), v.label(hint, "help"))
 	}
 	v.pack(box,
 		toggle("relay", "启用转发", "如果开启中继则使用规则配置转发UDP流量，否则全部直连转发UDP流量"),
 		toggle("stun", "禁用STUN", "开启此选项可以防止WebRTC泄漏真实IP"),
-		v.alignedSetting("运行端口", v.input("udp.ports", "", false, false, false)),
+		v.formRow("运行端口", v.input("udp.ports", "", false, false, false)),
 		v.label("留空则允许所有端口，0则禁止所有端口", "help"),
-		v.alignedSetting("超时（秒）", v.input("udp.timeout", "30", false, false, false)))
+		v.formRow("超时（秒）", v.input("udp.timeout", "30", false, false, false)))
 	v.dialogActions(box, u.saveUDP)
 }

@@ -110,29 +110,17 @@ func (v *nativeView) connectivityEditor(box *widget, speed bool) {
 	if speed {
 		prefix, defaults = "speed", profile.SpeedURLs
 	}
-	labelWidth := float32(108)
-	if speed {
-		labelWidth = 76
-	}
-	v.pack(box, v.urlFields(prefix, defaults, labelWidth))
+	v.pack(box, v.urlFields(prefix, defaults))
 	if !speed {
 		timeout := v.input("testTimeout", "15", false, false, false)
 		concurrency := v.input("testConcurrency", "20", false, false, false)
-		timeout.pointer.Width(120)
-		concurrency.pointer.Width(120)
-		v.pack(box, v.settingControlRow("超时时长（秒）", timeout, labelWidth), v.settingControlRow("并发数量", concurrency, labelWidth))
+		v.pack(box, v.formRow("超时时长（秒）", timeout), v.formRow("并发数量", concurrency))
 	}
 	v.dialogActions(box, func() { u.saveConnectivity(speed) })
 }
 
-func (v *nativeView) urlFields(prefix string, defaults []string, labelWidth float32) *widget {
+func (v *nativeView) urlFields(prefix string, defaults []string) *widget {
 	u := v.ui
-	row := func(label string, control *widget) *widget {
-		if labelWidth == 0 {
-			return v.compactFormRow(label, control)
-		}
-		return v.settingControlRow(label, control, labelWidth)
-	}
 	opts := make([]option, 0, len(defaults)+1)
 	for _, target := range defaults {
 		opts = append(opts, option{target, target})
@@ -145,12 +133,11 @@ func (v *nativeView) urlFields(prefix string, defaults []string, labelWidth floa
 		input.pointer.Label(v.translate("测速URL"))
 		customTitle = ""
 	}
-	custom := row(customTitle, input)
+	custom := v.formRow(customTitle, input)
 	custom.setVisible(u.field(prefix+".choice").Text() == "custom")
 	choice := v.selectWidget(u.field(prefix+".choice").Text(), opts, false, func(value string) {
 		u.field(prefix + ".choice").SetText(value)
 		custom.setVisible(value == "custom")
-		v.formAlignmentPending = labelWidth == 0 || v.formAlignmentPending
 		fitNativeDialog()
 	})
 	choice.setExpand(true)
@@ -159,5 +146,5 @@ func (v *nativeView) urlFields(prefix string, defaults []string, labelWidth floa
 	if prefix == "group.test" {
 		title = "测速URL"
 	}
-	return v.box("", false, 12, false, row(title, choice), custom)
+	return v.box("", false, 12, false, v.formRow(title, choice), custom)
 }
