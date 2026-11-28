@@ -47,6 +47,8 @@ jobs:
     runs-on: ubuntu-24.04
     env:
       HAS_ANDROID_SIGNING_KEY: ${{ secrets.LANBOAT_ANDROID_KEYSTORE_BASE64 != '' }}
+    outputs:
+      signing: ${{ env.HAS_ANDROID_SIGNING_KEY }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -54,12 +56,15 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
-      - uses: actions/setup-java@v5
+      - &setup-java
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '21'
-      - uses: android-actions/setup-android@v4
-      - name: Install Android build tools
+      - &setup-android
+        uses: android-actions/setup-android@v4
+      - &install-android-tools
+        name: Install Android build tools
         run: |
           set -euo pipefail
           sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;28.2.13676358'
@@ -83,8 +88,42 @@ jobs:
           emulator-options: -no-window -no-snapshot -no-audio -no-boot-anim -no-metrics -gpu swiftshader -camera-back none
           script: |
             python3 scripts/test-android.py dist/Lanboat-android-debug.apk dist/Lanboat-Android-Emulator.png --serial "emulator-$EMULATOR_PORT"
-      - name: Build signed Android release
-        if: (github.event_name == 'release' || inputs.tag != '') && env.HAS_ANDROID_SIGNING_KEY == 'true'
+      - uses: actions/upload-artifact@v6
+        with:
+          name: lanboat-android
+          path: |
+            dist/Lanboat-android-debug.apk
+            dist/Lanboat-Android-Emulator.png
+          if-no-files-found: error
+
+  android-release:
+    name: Publish Android ${{ matrix.abi }}
+    needs: android
+    if: (github.event_name == 'release' || inputs.tag != '') && needs.android.outputs.signing == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: arm64, abi: arm64 }
+          - { arch: amd64, abi: x86_64 }
+    env:
+      ANDROID_ARCH: ${{ matrix.arch }}
+      APK_ABI: ${{ matrix.abi }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - *setup-java
+      - *setup-android
+      - *install-android-tools
+      - name: Build and verify signed APK
+        id: sign
         env:
           RELEASE_APK_KEY: ${{ secrets.LANBOAT_ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEY_ALIAS: ${{ secrets.LANBOAT_ANDROID_KEY_ALIAS }}
@@ -97,22 +136,28 @@ jobs:
           trap 'rm -f "$ANDROID_KEYSTORE"' EXIT
           umask 077
           printf '%s' "$RELEASE_APK_KEY" | base64 --decode > "$ANDROID_KEYSTORE"
-          ANDROID_ARCH=arm64 bash scripts/build-mobile.sh android "dist/Lanboat-$LANBOAT_VERSION-Android-arm64.apk"
-          ANDROID_ARCH=amd64 bash scripts/build-mobile.sh android "dist/Lanboat-$LANBOAT_VERSION-Android-x86_64.apk"
+          package="dist/Lanboat-$LANBOAT_VERSION-Android-$APK_ABI.apk"
+          bash scripts/build-mobile.sh android "$package"
+          echo "package=$package" >> "$GITHUB_OUTPUT"
+      - name: Attach signed APK to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PACKAGE: ${{ steps.sign.outputs.package }}
+        run: gh release upload "$MOBILE_VERSION" "$PACKAGE" --repo "$GITHUB_REPOSITORY" --clobber
       - uses: actions/upload-artifact@v6
+        if: ${{ !cancelled() && steps.sign.outcome == 'success' }}
         with:
-          name: lanboat-android
-          path: |
-            dist/*-Android-*.apk
-            dist/Lanboat-android-debug.apk
-            dist/Lanboat-Android-Emulator.png
+          name: lanboat-android-${{ matrix.abi }}
+          path: ${{ steps.sign.outputs.package }}
           if-no-files-found: error
 
   ios:
     needs: tests
     runs-on: macos-26
+    outputs:
+      signed: ${{ steps.sign.outcome == 'success' }}
     env:
-      RELEASE_IOS_CERT: ${{ secrets.LANBOAT_IOS_P12_BASE64 }}
+      HAS_IOS_SIGNING_KEY: ${{ secrets.LANBOAT_IOS_P12_BASE64 != '' }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -144,8 +189,10 @@ jobs:
           test -s "$data/Library/Application Support/lanboat/config.json"
           xcrun simctl io "$device" screenshot dist/iPhone-Simulator.png
       - name: Build signed iPhone release
-        if: (github.event_name == 'release' || inputs.tag != '') && env.RELEASE_IOS_CERT != ''
+        id: sign
+        if: (github.event_name == 'release' || inputs.tag != '') && env.HAS_IOS_SIGNING_KEY == 'true'
         env:
+          RELEASE_IOS_CERT: ${{ secrets.LANBOAT_IOS_P12_BASE64 }}
           IOS_CERT_PASSWORD: ${{ secrets.LANBOAT_IOS_P12_PASSWORD }}
           IOS_APP_PROFILE_BASE64: ${{ secrets.LANBOAT_IOS_APP_PROFILE_BASE64 }}
           IOS_TUNNEL_PROFILE_BASE64: ${{ secrets.LANBOAT_IOS_TUNNEL_PROFILE_BASE64 }}
@@ -179,30 +226,19 @@ jobs:
             dist/iPhone-Simulator.png
           if-no-files-found: error
 
-  publish:
-    if: github.event_name == 'release' || inputs.tag != ''
-    needs: [android, ios]
+  publish-ios:
+    name: Publish iOS
+    needs: ios
+    if: (github.event_name == 'release' || inputs.tag != '') && needs.ios.outputs.signed == 'true'
     runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
       - uses: actions/download-artifact@v7
         with:
-          pattern: lanboat-*
-          merge-multiple: true
+          name: lanboat-ios
           path: dist
-      - name: Attach signed mobile packages to the release
+      - name: Attach signed IPA to the release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          version="${MOBILE_VERSION#v}"
-          for package in "dist/Lanboat-$version-Android-arm64.apk" \
-                         "dist/Lanboat-$version-Android-x86_64.apk" \
-                         "dist/Lanboat-$version-iOS.ipa"; do
-            if [[ -s $package ]]; then
-              gh release upload "$MOBILE_VERSION" "$package" --repo "$GITHUB_REPOSITORY" --clobber
-            else
-              echo "::notice::Signing credentials were unavailable for $package. See CI artifacts for test packages."
-            fi
-          done
+        run: gh release upload "$MOBILE_VERSION" "dist/Lanboat-${MOBILE_VERSION#v}-iOS.ipa" --repo "$GITHUB_REPOSITORY" --clobber

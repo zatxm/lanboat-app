@@ -114,7 +114,7 @@ ios)
     frameworks=(-framework Foundation -framework NetworkExtension -framework Security -framework CoreFoundation -lresolv)
     common=(-isysroot "$sysroot" -target "$target_triple" -fobjc-arc)
     "$clang" "${common[@]}" mobile/ios/App.m -I"$fegodir/mobile/ios" "$tmp/Lanboat.a" \
-        "${frameworks[@]}" -framework UIKit -framework UniformTypeIdentifiers -framework QuartzCore -framework CoreGraphics -o "$app/Lanboat"
+        "${frameworks[@]}" -framework UIKit -framework UniformTypeIdentifiers -framework QuartzCore -framework CoreGraphics -framework CoreText -o "$app/Lanboat"
     "$clang" "${common[@]}" -fapplication-extension -Wl,-e,_NSExtensionMain mobile/ios/PacketTunnel.m \
         "$tmp/PacketTunnel.a" "${frameworks[@]}" -o "$tunnel/PacketTunnel"
 
